@@ -1,11 +1,10 @@
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Header
 from pydantic import BaseModel, ValidationError
 from logger import logger
 from huggingface_hub import snapshot_download
 import os
 import gc
 import subprocess
-from fastapi import Header, Request
 from typing import Optional
 
 app = FastAPI()
@@ -19,10 +18,10 @@ class ModelRequest(BaseModel):
 @app.post("/download-model/")
 async def download_model(
     request: ModelRequest,
-    authorization: str = Header(None),
     weight_format: str = "int8",
     target_device: str = "CPU",
-    download_path: Optional[str] = "models"
+    download_path: Optional[str] = "models",
+    authorization: Optional[str] = Header(None)
 ):
     """
     Endpoint to download a model from Hugging Face.
@@ -30,6 +29,14 @@ async def download_model(
     Additional params: weight_format, target_device, download_path
     """
     try:
+        # Check for Authorization header
+        hf_token = authorization
+        if not hf_token:
+            raise HTTPException(
+                status_code=401,
+                detail="Authorization token is empty."
+            )
+
         # Validate that model_type is provided if is_ovms is True
         if request.is_ovms and not request.model_type:
             raise HTTPException(
@@ -37,21 +44,22 @@ async def download_model(
                 detail="model_type is required when is_ovms is True"
             )
 
-        # Log received headers (optional)
-        logger.info(f"Received headers: Authorization={authorization}")
+        safe_download_path = download_path if download_path is not None else "models"
+        model_path = os.path.join(target_device.lower(), safe_download_path)
+        logger.info(f"Received Authorization header.")
 
         # Set the Hugging Face token as an environment variable
-        os.environ["HF_TOKEN"] = authorization
+        os.environ["HF_TOKEN"] = hf_token
         logger.info(
             f"Initiating model download with parameters: model_name={request.model_name}, "
             f"model_type={request.model_type}, is_ovms={request.is_ovms}, "
-            f"weight_format={weight_format}, target_device={target_device}, download_path={download_path}"
+            f"weight_format={weight_format}, target_device={target_device}, download_path={model_path}"
         )
         # Download the entire model repository
-        model_path = snapshot_download(
+        hugginface_model_path = snapshot_download(
             repo_id=request.model_name,
-            use_auth_token=authorization,
-            local_dir=download_path
+            use_auth_token=hf_token,
+            local_dir=model_path
         )
 
         # If is_ovms is True, apply model conversion
@@ -60,7 +68,7 @@ async def download_model(
                 model_name=request.model_name,
                 weight_format=weight_format,
                 target_device=target_device,
-                huggingface_token=authorization,
+                huggingface_token=hf_token,
                 model_type=request.model_type
             )
 
@@ -69,10 +77,10 @@ async def download_model(
 
         return {
             "message": "Model downloaded successfully",
-            "model_path": model_path,
+            "model_path": hugginface_model_path,
             "weight_format": weight_format,
             "target_device": target_device,
-            "download_path": download_path
+            "download_path": model_path
         }
     except ValidationError as e:
         raise HTTPException(status_code=422, detail=e.errors())
@@ -125,13 +133,15 @@ def convert_model_to_ovms(model_name, weight_format, huggingface_token, model_ty
 
         # Step 3: Export the model
         logger.info(f"Exporting model: {model_name} with weight format: {weight_format} and export type: {export_type}...")
-        os.makedirs("models", exist_ok=True)
+        #models directory
+        model_directory = os.path.join(target_device.lower(), "models")
+        os.makedirs(model_directory, exist_ok=True)
         command = [
             "python3", "export_model.py", export_type,
             "--source_model", model_name,
             "--weight-format", weight_format,
-            "--config_file_path", "models/config.json",
-            "--model_repository_path", "models",
+            "--config_file_path", f"{model_directory}/config.json",
+            "--model_repository_path", model_directory,
             "--target_device", target_device
         ]
         subprocess.run(command, check=True)
