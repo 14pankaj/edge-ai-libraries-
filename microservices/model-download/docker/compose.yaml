@@ -3,6 +3,8 @@ services:
     build:
       context: ..
       dockerfile: docker/Dockerfile
+    environment:
+      - HF_HUB_ENABLE_HF_TRANSFER=1
     ports:
       - "32004:8000"  # Map container port 8000 to host port 8000
     volumes:

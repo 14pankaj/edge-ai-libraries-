@@ -7,21 +7,21 @@ import gc
 import subprocess
 from typing import Optional
 
-app = FastAPI()
+app = FastAPI(title="Model APIs",root_path="/v1/api")
 
 # Define the input model
 class ModelRequest(BaseModel):
-    model_name: str
-    model_type: str = None  # Optional by default, but will be validated if is_ovms is True
+    name: str
+    type: Optional[str] = None  # Optional by default, but will be validated if is_ovms is True
     is_ovms: bool = False
 
 @app.post("/download-model/")
 async def download_model(
     request: ModelRequest,
-    weight_format: str = "int8",
-    target_device: str = "CPU",
+    weight_format: Optional[str] = "int8",
+    target_device: Optional[str] = "CPU",
     download_path: Optional[str] = "models",
-    authorization: Optional[str] = Header(None)
+    authorization: str = Header(...)
 ):
     """
     Endpoint to download a model from Hugging Face.
@@ -38,7 +38,7 @@ async def download_model(
             )
 
         # Validate that model_type is provided if is_ovms is True
-        if request.is_ovms and not request.model_type:
+        if request.is_ovms and not request.type:
             raise HTTPException(
                 status_code=400,
                 detail="model_type is required when is_ovms is True"
@@ -51,13 +51,13 @@ async def download_model(
         # Set the Hugging Face token as an environment variable
         os.environ["HF_TOKEN"] = hf_token
         logger.info(
-            f"Initiating model download with parameters: model_name={request.model_name}, "
-            f"model_type={request.model_type}, is_ovms={request.is_ovms}, "
+            f"Initiating model download with parameters: model_name={request.name}, "
+            f"model_type={request.type}, is_ovms={request.is_ovms}, "
             f"weight_format={weight_format}, target_device={target_device}, download_path={model_path}"
         )
         # Download the entire model repository
         hugginface_model_path = snapshot_download(
-            repo_id=request.model_name,
+            repo_id=request.name,
             use_auth_token=hf_token,
             local_dir=model_path
         )
@@ -65,11 +65,12 @@ async def download_model(
         # If is_ovms is True, apply model conversion
         if request.is_ovms:
             convert_model_to_ovms(
-                model_name=request.model_name,
+                model_name=request.name,
                 weight_format=weight_format,
                 target_device=target_device,
                 huggingface_token=hf_token,
-                model_type=request.model_type
+                model_type=request.type,
+                model_directory=model_path
             )
 
         # Explicitly clean up resources to avoid semaphore warnings
@@ -87,7 +88,7 @@ async def download_model(
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Error downloading or converting model: {str(e)}")
 
-def convert_model_to_ovms(model_name, weight_format, huggingface_token, model_type,target_device):
+def convert_model_to_ovms(model_name, weight_format, huggingface_token, model_type,target_device,model_directory):
     """
     Downloads a model from Hugging Face, converts it to OVMS format, and prepares it for deployment.
 
@@ -115,7 +116,7 @@ def convert_model_to_ovms(model_name, weight_format, huggingface_token, model_ty
         if model_type not in export_type_map:
             raise HTTPException(
                 status_code=400,
-                detail=f"Invalid model_type: {model_type}. Must be one of {list(export_type_map.keys())}."
+                detail=f"Invalid model_type: {type}. Must be one of {list(export_type_map.keys())}."
             )
 
         export_type = export_type_map[model_type]
@@ -134,7 +135,6 @@ def convert_model_to_ovms(model_name, weight_format, huggingface_token, model_ty
         # Step 3: Export the model
         logger.info(f"Exporting model: {model_name} with weight format: {weight_format} and export type: {export_type}...")
         #models directory
-        model_directory = os.path.join(target_device.lower(), "models")
         os.makedirs(model_directory, exist_ok=True)
         command = [
             "python3", "export_model.py", export_type,
