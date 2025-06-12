@@ -2,7 +2,8 @@
 name = "model_download"
 version = "0.1.0"
 description = "A FastAPI application for downloading and converting Hugging Face models."
-authors = ["Saranya, Anbuchezhiyan <saranya.a@intel.com>"]
+authors = []
+packages = [{ include = "app" }]
 readme = "README.md"
 
 [tool.poetry.dependencies]
@@ -10,6 +11,7 @@ python = "^3.10"
 fastapi = "0.115.4"
 uvicorn = "^0.23.2"
 structlog = "25.1.0"
+pydantic = "^1.10.13"
 openvino-tokenizers = { version = "2025.0.*", extras = ["transformers"] }
 openvino = "2025.0.*"
 nncf = "2.14.0" 

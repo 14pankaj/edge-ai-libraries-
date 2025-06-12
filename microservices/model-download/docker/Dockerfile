@@ -1,5 +1,5 @@
 # Use an official Python runtime as a parent image
-FROM python:3.10-slim
+FROM python:3.11-slim
 
 # Set the working directory in the container
 WORKDIR /app
@@ -30,4 +30,4 @@ COPY . /app
 EXPOSE 8000
 
 # Command to run the application
-CMD ["uvicorn", "--host", "0.0.0.0", "main:app"]
+CMD ["uvicorn", "--host", "0.0.0.0", "app.main:app"]
