@@ -1,0 +1,214 @@
+openapi: 3.0.0
+info:
+  title: Model Download Service API
+  description: |
+    API for downloading and converting models from Hugging Face to OVMS format.
+    This service provides endpoints to download models and optionally convert them
+    to OpenVINO Model Server (OVMS) format.
+  version: 1.0.0
+  contact:
+    name: Intel GenAI Team
+servers:
+  - url: /api/v1
+    description: Base API path
+
+components:
+  schemas:
+    ModelPrecision:
+      type: string
+      enum:
+        - int8
+        - fp16
+        - fp32
+      description: The precision format for model weights
+
+    DeviceType:
+      type: string
+      enum:
+        - CPU
+        - GPU
+      description: The target device type for model deployment
+
+    OVMSConfig:
+      type: object
+      properties:
+        precision:
+          $ref: '#/components/schemas/ModelPrecision'
+          default: int8
+        device:
+          $ref: '#/components/schemas/DeviceType'
+          default: CPU
+        cache_size:
+          type: integer
+          minimum: 1
+          description: Cache size for model optimization
+      description: Configuration for OVMS model conversion
+
+    ModelRequest:
+      type: object
+      required:
+        - name
+      properties:
+        name:
+          type: string
+          description: The name/ID of the Hugging Face model
+        type:
+          type: string
+          description: The type of the model (e.g., llm, embeddings, rerank)
+        is_ovms:
+          type: boolean
+          default: false
+          description: Whether to convert the model to OVMS format
+        revision:
+          type: string
+          description: Specific model revision to download
+        model_family:
+          type: string
+          description: The family/category of the model
+        description:
+          type: string
+          description: Description of the model
+        cache_dir:
+          type: string
+          description: Custom cache directory for the model
+        ovms_config:
+          $ref: '#/components/schemas/OVMSConfig'
+          description: OVMS-specific configuration
+
+    ModelDownloadRequest:
+      type: object
+      required:
+        - models
+      properties:
+        models:
+          type: array
+          items:
+            $ref: '#/components/schemas/ModelRequest'
+          description: List of models to download
+        parallel_downloads:
+          type: boolean
+          default: false
+          description: Whether to download models in parallel
+
+    ModelResult:
+      type: object
+      required:
+        - status
+        - model_name
+      properties:
+        status:
+          type: string
+          enum: [success, error]
+          description: The status of the model download/conversion
+        model_name:
+          type: string
+          description: The name of the model
+        model_path:
+          type: string
+          description: Path where the model was downloaded/converted
+        error:
+          type: string
+          description: Error message if status is error
+        is_ovms:
+          type: boolean
+          description: Whether the model was converted to OVMS format
+
+    DownloadResponse:
+      type: object
+      properties:
+        message:
+          type: string
+          description: Status message
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/ModelResult'
+          description: Results for each model download/conversion
+        model_path:
+          type: string
+          description: Path to the downloaded model (for single model requests)
+
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      description: Hugging Face API token for authentication
+
+paths:
+  /models/download:
+    post:
+      summary: Download and optionally convert models
+      description: |
+        Downloads one or more models from Hugging Face and optionally converts them
+        to OVMS format. Supports parallel downloads and custom configurations.
+      operationId: downloadHuggingFaceModels
+      security:
+        - BearerAuth: []
+      parameters:
+        - in: query
+          name: download_path
+          schema:
+            type: string
+          default: models
+          description: Base path for model downloads
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ModelDownloadRequest'
+            example:
+              models:
+                - name: microsoft/Phi-3.5-mini-instruct
+                  type: llm
+                  is_ovms: true
+                  ovms_config:
+                    precision: int8
+                    device: CPU
+                    cache_size: 10
+              parallel_downloads: false
+      responses:
+        '200':
+          description: Successful model download/conversion
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DownloadResponse'
+        '400':
+          description: Bad request or model processing error
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  detail:
+                    type: string
+        '401':
+          description: Authentication token missing or invalid
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  detail:
+                    type: string
+        '422':
+          description: Validation error in request
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  detail:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        loc:
+                          type: array
+                          items:
+                            type: string
+                        msg:
+                          type: string
+                        type:
+                          type: string
