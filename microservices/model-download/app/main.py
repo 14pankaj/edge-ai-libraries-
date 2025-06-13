@@ -5,11 +5,24 @@ from concurrent.futures import ThreadPoolExecutor
 from enum import Enum
 from typing import List, Optional, TypedDict
 from fastapi import FastAPI, Header, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field, ValidationError
 from huggingface_hub import snapshot_download
 from .logger import logger
 
 app = FastAPI(root_path="/api/v1",title="Model Download Service", version="1.0.0")
+
+# Add CORS middleware
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=os.getenv("CORS_ALLOW_ORIGINS", "*").split(
+        ","
+    ),  # Adjust this to your needs
+    allow_credentials=True,
+    allow_methods=os.getenv("CORS_ALLOW_METHODS", "*").split(","),
+    allow_headers=os.getenv("CORS_ALLOW_HEADERS", "*").split(","),
+)
+
 
 class ModelPrecision(str, Enum):
     INT8 = "int8"
@@ -55,44 +68,47 @@ async def download_huggingface_models(
     """
     Unified endpoint to download one or more models from Hugging Face.
 
-    Request format:
-    {
-        "models": [
-            {"name": "model1", "type": "llm", "is_ovms": true},
-            {"name": "model2", "type": "llm", "is_ovms": false}
-        ],
-        "parallel_downloads": true  # Optional, defaults to false
-    }
+    Args:
+        request: ModelDownloadRequest containing models to download and configuration
+        download_path: Base directory for model downloads
+        Authorization: Hugging Face API token
 
-    For single model download, simply include one model in the list:
-    {
-        "models": [
-            {"name": "model1", "type": "llm", "is_ovms": true}
-        ]
-    }
+    Returns:
+        dict: Response containing download status and results for each model
+
+    Raises:
+        HTTPException: 
+            - 401: If authorization token is missing or invalid
+            - 422: If request validation fails
+            - 400: If model download process fails
     """
     try:
         if not Authorization:
             raise HTTPException(
                 status_code=401,
-                detail="Authorization token is empty."
+                detail="Authorization token is required"
             )
-        # Validate request
-        os.environ["HF_TOKEN"] = Authorization
 
         # Log download request details with configuration
         logger.info(f"Initiating model download for {len(request.models)} model(s)")
 
-        # Process models either in parallel or sequentially
-        with ThreadPoolExecutor(max_workers=len(request.models) if request.parallel_downloads else 1) as executor:
-            results = list(executor.map(
-                lambda model: download_and_process_model(
-                    model=model,
-                    model_path=download_path,
-                    hf_token=Authorization
-                ),
-                request.models
-            ))
+        try:
+            # Process models either in parallel or sequentially
+            with ThreadPoolExecutor(max_workers=len(request.models) if request.parallel_downloads else 1) as executor:
+                results = list(executor.map(
+                    lambda model: download_and_process_model(
+                        model=model,
+                        model_path=download_path,
+                        hf_token=Authorization
+                    ),
+                    request.models
+                ))
+        except Exception as e:
+            logger.error(f"Error during model download execution: {str(e)}")
+            raise HTTPException(
+                status_code=500,
+                detail=f"Failed to execute model downloads: {str(e)}"
+            )
 
         gc.collect()
 
@@ -118,9 +134,20 @@ async def download_huggingface_models(
         return response
 
     except ValidationError as e:
-        raise HTTPException(status_code=422, detail=e.errors())
+        logger.error(f"Request validation failed: {str(e)}")
+        raise HTTPException(
+            status_code=422, 
+            detail=f"Invalid request format: {e.errors()}"
+        )
+    except HTTPException:
+        # Re-raise HTTP exceptions as they already have proper status codes and details
+        raise
     except Exception as e:
-        raise HTTPException(status_code=400, detail=f"Error in model download process: {str(e)}")
+        logger.error(f"Unexpected error in model download process: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Unexpected error in model download process: {str(e)}"
+        )
 
 def download_and_process_model(model: ModelRequest, model_path: str, hf_token: str) -> ModelResult:
     """
@@ -133,21 +160,45 @@ def download_and_process_model(model: ModelRequest, model_path: str, hf_token: s
         
     Returns:
         ModelResult containing the status and details of the model processing
+
+    Raises:
+        OSError: If directory creation fails
+        HTTPException: If model download or OVMS conversion fails
     """
     try:
         logger.info(f"Starting download for model: {model.name}")
         
         # Create model-specific directory
         model_specific_path = os.path.join(model_path, model.name.replace('/', '_'))
-        os.makedirs(model_specific_path, exist_ok=True)
+        try:
+            os.makedirs(model_specific_path, exist_ok=True)
+        except OSError as e:
+            logger.error(f"Failed to create directory {model_specific_path}: {str(e)}")
+            return ModelResult(
+                status="error",
+                model_name=model.name,
+                model_path=None,
+                error=f"Failed to create model directory: {str(e)}",
+                is_ovms=None
+            )
         
-        # Download model from Hugging Face
-        model_downloaded_path = snapshot_download(
-            repo_id=model.name,
-            token=hf_token,
-            local_dir=model_specific_path
-        )
-        logger.info(f"Model download completed: {model.name}")
+        try:
+            # Download model from Hugging Face
+            model_downloaded_path = snapshot_download(
+                repo_id=model.name,
+                token=hf_token,
+                local_dir=model_specific_path
+            )
+            logger.info(f"Model download completed: {model.name}")
+        except Exception as e:
+            logger.error(f"Failed to download model {model.name}: {str(e)}")
+            return ModelResult(
+                status="error",
+                model_name=model.name,
+                model_path=None,
+                error=f"Failed to download model: {str(e)}",
+                is_ovms=None
+            )
 
         # Convert if OVMS is requested and model type is provided
         if model.is_ovms and model.type:
@@ -161,8 +212,19 @@ def download_and_process_model(model: ModelRequest, model_path: str, hf_token: s
             )
             
             # Prepare OVMS configuration
-            model_downloaded_path = os.path.join(ovms_config.device.value,model_specific_path)
-            os.makedirs(model_downloaded_path, exist_ok=True)
+            model_downloaded_path = os.path.join(ovms_config.device.value, model_specific_path)
+            try:
+                os.makedirs(model_downloaded_path, exist_ok=True)
+            except OSError as e:
+                logger.error(f"Failed to create OVMS directory {model_downloaded_path}: {str(e)}")
+                return ModelResult(
+                    status="error",
+                    model_name=model.name,
+                    model_path=None,
+                    error=f"Failed to create OVMS directory: {str(e)}",
+                    is_ovms=None
+                )
+
             ovms_params = {
                 "model_name": model.name,
                 "weight_format": ovms_config.precision.value,
@@ -176,8 +238,18 @@ def download_and_process_model(model: ModelRequest, model_path: str, hf_token: s
             # Filter out None values
             ovms_params = {k: v for k, v in ovms_params.items() if v is not None}
             
-            convert_to_ovms_format(**ovms_params)
-            logger.info(f"OVMS conversion completed for model: {model.name}")
+            try:
+                convert_to_ovms_format(**ovms_params)
+                logger.info(f"OVMS conversion completed for model: {model.name}")
+            except HTTPException as e:
+                logger.error(f"OVMS conversion failed for {model.name}: {str(e)}")
+                return ModelResult(
+                    status="error",
+                    model_name=model.name,
+                    model_path=None,
+                    error=f"OVMS conversion failed: {str(e)}",
+                    is_ovms=None
+                )
 
         return ModelResult(
             status="success",
@@ -193,7 +265,7 @@ def download_and_process_model(model: ModelRequest, model_path: str, hf_token: s
             status="error",
             model_name=model.name,
             model_path=None,
-            error=str(e),
+            error=f"Unexpected error: {str(e)}",
             is_ovms=None
         )
 
@@ -216,39 +288,45 @@ def convert_to_ovms_format(
         model_type (str): The type of the model (e.g., "llm", "embeddings", "rerank").
         cache_size (int, optional): Cache size for model optimization.
 
-    Returns:
-        dict: A success message if the process completes successfully.
-
     Raises:
-        HTTPException: If any step in the process fails.
+        HTTPException: If model type is invalid, authentication fails, or model conversion fails
     """
+    # Map model_type to export type
+    export_type_map = {
+        "llm": "text_generation",
+        "embeddings": "embeddings",
+        "rerank": "rerank"
+    }
+
+    # Validate model_type
+    if model_type not in export_type_map:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid model_type: {model_type}. Must be one of {list(export_type_map.keys())}."
+        )
+
+    export_type = export_type_map[model_type]
+
     try:
-        # Map model_type to export type
-        export_type_map = {
-            "llm": "text_generation",
-            "embeddings": "embeddings",
-            "rerank": "rerank"
-        }
-
-        # Validate model_type
-        if model_type not in export_type_map:
-            raise HTTPException(
-                status_code=400,
-                detail=f"Invalid model_type: {type}. Must be one of {list(export_type_map.keys())}."
-            )
-
-        export_type = export_type_map[model_type]
-
         # Step 1: Log in to Hugging Face
         logger.info("Logging in to Hugging Face...")
         result = subprocess.run(["huggingface-cli", "login", "--token", huggingface_token])
         if result.returncode != 0:
-            raise HTTPException(status_code=400, detail="Failed to log in to Hugging Face. Please check your token.")
+            raise HTTPException(
+                status_code=401,
+                detail="Failed to authenticate with Hugging Face. Please check your token."
+            )
 
         # Step 2: Download the export_model.py script
         logger.info("Downloading export_model.py script...")
         export_script_url = "https://raw.githubusercontent.com/openvinotoolkit/model_server/refs/heads/releases/2025/0/demos/common/export_models/export_model.py"
-        subprocess.run(["curl", "-o", "export_model.py", export_script_url], check=True)
+        try:
+            subprocess.run(["curl", "-o", "export_model.py", export_script_url], check=True)
+        except subprocess.CalledProcessError as e:
+            raise HTTPException(
+                status_code=500,
+                detail=f"Failed to download export script: {str(e)}"
+            )
 
         # Step 3: Export the model
         logger.info(f"Exporting model: {model_name} with weight format: {weight_format} and export type: {export_type}...")
@@ -268,11 +346,22 @@ def convert_to_ovms_format(
         if cache_size is not None:
             command += ["--cache", str(cache_size)]
 
-        subprocess.run(command, check=True)
+        try:
+            subprocess.run(command, check=True)
+        except subprocess.CalledProcessError as e:
+            raise HTTPException(
+                status_code=500,
+                detail=f"Model conversion failed: {str(e)}. Check if the model is compatible with the specified format and device."
+            )
 
         return {"message": f"Model successfully downloaded, converted, and prepared for OVMS deployment as {export_type}."}
 
-    except subprocess.CalledProcessError as e:
-        raise HTTPException(status_code=500, detail=f"An error occurred during the process: {e}")
+    except HTTPException:
+        # Re-raise HTTP exceptions as they are already properly formatted
+        raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Unexpected error: {e}")
+        logger.error(f"Unexpected error during model conversion: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Unexpected error during model conversion: {str(e)}"
+        )

@@ -9,7 +9,7 @@ info:
   contact:
     name: Intel GenAI Team
 servers:
-  - url: /api/v1
+  - url: http://Host:32004/api/v1
     description: Base API path
 
 components:
@@ -129,9 +129,10 @@ components:
           description: Path to the downloaded model (for single model requests)
 
   securitySchemes:
-    BearerAuth:
-      type: http
-      scheme: bearer
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: Authorization
       description: Hugging Face API token for authentication
 
 paths:
@@ -143,13 +144,13 @@ paths:
         to OVMS format. Supports parallel downloads and custom configurations.
       operationId: downloadHuggingFaceModels
       security:
-        - BearerAuth: []
+        - ApiKeyAuth: []
       parameters:
         - in: query
           name: download_path
           schema:
             type: string
-          default: models
+            default: models
           description: Base path for model downloads
       requestBody:
         required: true
