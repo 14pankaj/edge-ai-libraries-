@@ -3,7 +3,7 @@
 ---
 global:
   huggingface:
-    apiToken: <HUGGINGFACEHUB_API_TOKEN># Set this during installation
+    apiToken: <HUGGINGFACEHUB_API_TOKEN> # Set this during installation
   proxy:
     no_proxy: ""
     http_proxy: ""
@@ -36,7 +36,7 @@ Chatqna:
   name: chatqna-backend
   image:
     repository: intel/chatqna
-    tag: "1.1.2"
+    tag: "1.2.1"
     pullPolicy: IfNotPresent
   service:
     type: ClusterIP
