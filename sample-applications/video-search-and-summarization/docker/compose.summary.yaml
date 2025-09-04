@@ -66,7 +66,7 @@ services:
       HUGGINGFACE_TOKEN: ${HUGGINGFACE_TOKEN}
       OV_CONFIG: ${OV_CONFIG}
       VLM_LOG_LEVEL: ${VLM_LOG_LEVEL:-info}
-      OPENVINO_LOG_LEVEL: ${VLM_OPENVINO_LOG_LEVEL:-1}
+      OPENVINO_LOG_LEVEL: ${VLM_OPENVINO_LOG_LEVEL:-DEBUG}
       VLM_ACCESS_LOG_FILE: ${VLM_ACCESS_LOG_FILE:-/dev/null}
     restart: unless-stopped
     devices:
@@ -82,8 +82,8 @@ services:
       retries: 60
       start_period: 60s
     volumes:
-      - ov-models:/home/appuser/.cache/huggingface
-      - ov-models:/app/ov-model
+      - "~/models:/home/appuser/.cache/huggingface"
+      - "~/models/demo_folder/huggingface_models/:/app/ov-model"
     networks:
       - vs_network
 

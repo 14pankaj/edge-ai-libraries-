@@ -1,5 +1,6 @@
 import os
 import gc
+from pathlib import Path
 import shutil
 import subprocess
 from concurrent.futures import ThreadPoolExecutor
@@ -225,7 +226,7 @@ def download_and_process_model(
 
         # Create model-specific directory
         model_downloaded_path = os.path.join(
-            model_path, "huggingface_models", model.name.replace("/", "_")
+            model_path, "huggingface_models", Path(model.name.split("/")[-1])
         )
         try:
             os.makedirs(model_downloaded_path, exist_ok=True)

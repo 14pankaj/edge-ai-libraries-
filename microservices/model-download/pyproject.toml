@@ -14,8 +14,9 @@ openvino = "2025.1.0"
 openvino-tokenizers = { version = "2025.1.0", extras = ["transformers"] }
 optimum = {extras = ["openvino", "nncf"], version = "^1.25.0"}
 pillow = "^11.2.1"
-python = "^3.10"
-pydantic = "^1.10.13"
+python = "^3.10,<3.13"
+pydantic = "^2.11.5"
+pydantic-settings = "^2.9.1"
 qwen_vl_utils = "^0.0.11"
 sentence_transformers = "3.1.1"
 structlog = "25.1.0"
@@ -30,7 +31,7 @@ httpx = "^0.24.1"
 pytest-mock = "^3.11.1"
 
 [tool.poetry.group.cpu.dependencies]
-torch = { version = "^2.7.1", source = "pytorch-cpu" }
+torch = { version = ">=2.7.1", source = "pytorch-cpu" }
 
 [[tool.poetry.source]]
 name = "pytorch-cpu"

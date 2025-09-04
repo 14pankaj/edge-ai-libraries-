@@ -1,5 +1,5 @@
 # ---- Stage 1: Build dependencies ----
-FROM python:3.11-slim AS python-base
+FROM python:3.12-slim AS python-base
 
 # Set the working directory in the container
 WORKDIR /app
@@ -10,7 +10,8 @@ RUN apt-get update && apt-get install -y \
     git \
     build-essential \
     && rm -rf /var/lib/apt/lists/*
-
+    
+RUN /usr/local/bin/pip install --upgrade pip setuptools
 # Install Poetry
 RUN curl -sSL https://install.python-poetry.org | python3 -
 
@@ -27,7 +28,7 @@ COPY pyproject.toml poetry.lock /app/
 RUN poetry config virtualenvs.create false && poetry install --no-root
 
 # ---- Stage 2: Final slim image ----
-FROM python:3.11-slim
+FROM python:3.12-slim
 
 ARG UID=1000
 ARG GID=1000
@@ -41,7 +42,7 @@ RUN groupadd -g ${GID} appuser && \
     useradd -m -s /bin/bash -u ${UID} -g ${GID} appuser
 
 # Copy installed dependencies from python-base
-COPY --from=python-base /usr/local/lib/python3.11/site-packages /usr/local/lib/python3.11/site-packages
+COPY --from=python-base /usr/local/lib/python3.12/site-packages /usr/local/lib/python3.12/site-packages
 COPY --from=python-base /usr/local/bin /usr/local/bin
 
 # Copy the application files into the container
