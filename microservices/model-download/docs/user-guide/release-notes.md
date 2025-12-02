@@ -2,7 +2,7 @@
 
 ## Current Release
 
-**Version**: 1.0.0  
+**Version**: 1.0.0
 **Release Date**: WW45 2025
 - Introduces a Model Download Microservice featuring a plugin-based architecture for extensibility.
 - Integrates pre-configured model hubs, enabling support for downloading models from sources such as Hugging Face, Ollama, and Ultralytics.
