@@ -151,7 +151,7 @@ Handler requires:
 | Method | Path | Response |
 |---|---|---|
 | `GET` | `/detections` | JSON array of detection records |
-| `GET` | `/detections/stats` | JSON summary object |
+| `GET` | `/detections/summary` | JSON summary object |
 
 Both routes accept optional `min_id` and `max_id` query parameters with
 exclusive-lower/inclusive-upper semantics. `/detections` also retains its

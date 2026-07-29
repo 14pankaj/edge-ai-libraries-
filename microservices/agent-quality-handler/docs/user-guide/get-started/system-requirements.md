@@ -12,7 +12,7 @@ The Docker daemon must be running, and port `5002` must be available for the age
 ## External Services
 
 A reachable storage API is required and must implement bounded
-`GET /detections` and `GET /detections/stats` reads.
+`GET /detections` and `GET /detections/summary` reads.
 
 MQTT ingestion can use the broker in the Compose deployment or a reachable external broker.
 

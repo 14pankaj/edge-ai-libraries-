@@ -12,7 +12,7 @@ Detection Service ---- writes ----> External storage API
 MQTT broker -----> Agent service FIFO queue
                          |
                          | bounded GET /detections
-                         | bounded GET /detections/stats
+                         | bounded GET /detections/summary
                          v
             Policy -> Analysis -> Evidence -> Ticketing
                          |

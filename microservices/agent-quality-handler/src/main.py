@@ -127,7 +127,7 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(
-    title="aqh Agent Service",
+    title="Agent Quality handler Service",
     description="Event-driven Agentic Predictive Maintenance reasoning service",
     version="1.0.0",
     lifespan=lifespan,
@@ -296,6 +296,7 @@ def _run_payload(run_id: str, run: dict) -> dict:
     response_model=RunResponse,
     response_model_exclude_none=True,
     status_code=202,
+    tags=["Run"]
 )
 async def trigger_run(req: RunRequest):
     """Queue a bounded manual reasoning run."""
@@ -324,7 +325,7 @@ async def trigger_run(req: RunRequest):
     )
 
 
-@app.get("/agents/status/{run_id}")
+@app.get("/agents/status/{run_id}",  tags=["Run"])
 def get_status(run_id: str):
     _cleanup_runs()
     with _runs_lock:
@@ -334,7 +335,7 @@ def get_status(run_id: str):
     return _run_payload(run_id, run)
 
 
-@app.get("/agents/results/{run_id}")
+@app.get("/agents/results/{run_id}", tags=["Output"])
 def get_results(run_id: str):
     _cleanup_runs()
     with _runs_lock:
@@ -351,7 +352,7 @@ def get_results(run_id: str):
     return response
 
 
-@app.get("/agents/runs")
+@app.get("/agents/runs", tags=["Run"])
 def list_runs(id: Optional[str] = None):
     _cleanup_runs()
     with _runs_lock:
@@ -363,7 +364,7 @@ def list_runs(id: Optional[str] = None):
         return [_run_payload(key, value) for key, value in _runs.items()]
 
 
-@app.get("/agents/outputs/{agent}")
+@app.get("/agents/outputs/{agent}", tags=["Output"])
 def list_agent_outputs(agent: str):
     """Return retained output records for one agent."""
     try:
@@ -375,7 +376,7 @@ def list_agent_outputs(agent: str):
         raise HTTPException(status_code=503, detail=str(exc)) from exc
 
 
-@app.get("/agents/outputs/{agent}/{run_id}")
+@app.get("/agents/outputs/{agent}/{run_id}", tags=["Output"])
 def get_agent_output(agent: str, run_id: str):
     """Return one retained agent output by run ID."""
     try:
@@ -390,7 +391,7 @@ def get_agent_output(agent: str, run_id: str):
     return record
 
 
-@app.get("/health")
+@app.get("/health", tags=["Health"])
 def health():
     _cleanup_runs()
     with _runs_lock:
@@ -398,7 +399,7 @@ def health():
     return {"status": "ok", "service": "agent-service", "run_count": run_count}
 
 
-@app.get("/metrics")
+@app.get("/metrics", tags=["Health"])
 def metrics():
     _cleanup_runs()
     with _runs_lock:

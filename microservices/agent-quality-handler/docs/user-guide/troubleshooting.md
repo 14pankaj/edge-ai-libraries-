@@ -16,7 +16,7 @@ Storage is required and external:
 
 ```bash
 curl "$STORAGE_SERVICE_URL/detections"
-curl "$STORAGE_SERVICE_URL/detections/stats"
+curl "$STORAGE_SERVICE_URL/detections/summary"
 ```
 
 The default is `http://host.docker.internal:5001`. Ensure the host service
