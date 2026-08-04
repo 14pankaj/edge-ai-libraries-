@@ -1,0 +1,32 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "model-download-sdk"
+version = "0.1.0"
+description = "Windows SDK for Intel Model Download Service"
+requires-python = ">=3.10"
+
+dependencies = [
+    "httpx",
+    "typer",
+    "rich",
+    "attrs"
+]
+
+[project.scripts]
+model-download = "model_download_sdk.cli:main"
+
+[tool.setuptools.packages.find]
+# Scan both the project root (for model_download_sdk) and generated/
+# (for model_download_service_api_client and its sub-packages).
+# Setuptools automatically creates the correct package-dir mapping for each
+# root, which makes `pip install -e .` work without any PYTHONPATH hacks.
+where = [".", "generated"]
+exclude = ["tests*", "scripts*", "examples*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = ["integration: marks tests requiring live model-download service"]
+addopts = "-v --tb=short"

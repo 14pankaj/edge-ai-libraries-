@@ -1,0 +1,313 @@
+name: Upstream SDK Regeneration
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - microservices/model-download/docs/user-guide/_assets/openapi.yaml
+  workflow_dispatch:
+    inputs:
+      upstream_tag:
+        description: Optional upstream tag override (for manual runs)
+        required: false
+        type: string
+  schedule:
+    - cron: "17 3 * * *"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: sdk-regeneration
+  cancel-in-progress: false
+
+env:
+  UPSTREAM_REPO: intel/edge-ai-libraries
+  UPSTREAM_OPENAPI_PATH: microservices/model-download/docs/user-guide/_assets/openapi.yaml
+
+jobs:
+  detect-upstream:
+    name: Detect New Upstream Tag
+    runs-on: ubuntu-latest
+    outputs:
+      upstream_tag: ${{ steps.detect.outputs.upstream_tag }}
+      should_run: ${{ steps.detect.outputs.should_run }}
+      source_url: ${{ steps.detect.outputs.source_url }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Detect latest upstream tag
+        id: detect
+        shell: bash
+        env:
+          INPUT_TAG: ${{ inputs.upstream_tag }}
+        run: |
+          set -euo pipefail
+
+          if [[ -n "${INPUT_TAG:-}" ]]; then
+            latest_tag="${INPUT_TAG}"
+          else
+            latest_tag="$(python - <<'PY'
+            import json
+            import os
+            import urllib.request
+
+            repo = os.environ["UPSTREAM_REPO"]
+
+            def fetch(url: str):
+                req = urllib.request.Request(url, headers={"User-Agent": "sdk-regeneration-workflow"})
+                with urllib.request.urlopen(req, timeout=30) as resp:
+                    return json.load(resp)
+
+            try:
+                latest = fetch(f"https://api.github.com/repos/{repo}/releases/latest")
+                tag = latest.get("tag_name", "").strip()
+                if tag:
+                    print(tag)
+                    raise SystemExit(0)
+            except Exception:
+                pass
+
+            tags = fetch(f"https://api.github.com/repos/{repo}/tags?per_page=100")
+            if not tags:
+                raise SystemExit("No tags found in upstream repository")
+            print(tags[0]["name"])
+            PY
+            )"
+          fi
+
+          if [[ -z "${latest_tag}" ]]; then
+            echo "Failed to resolve upstream tag" >&2
+            exit 1
+          fi
+
+          source_url="https://raw.githubusercontent.com/${UPSTREAM_REPO}/${latest_tag}/${UPSTREAM_OPENAPI_PATH}"
+
+          git fetch --tags --force origin
+          marker_tag="sdk-sync/${latest_tag}"
+
+          if git rev-parse "refs/tags/${marker_tag}" >/dev/null 2>&1; then
+            should_run="false"
+          else
+            should_run="true"
+          fi
+
+          echo "upstream_tag=${latest_tag}" >> "${GITHUB_OUTPUT}"
+          echo "should_run=${should_run}" >> "${GITHUB_OUTPUT}"
+          echo "source_url=${source_url}" >> "${GITHUB_OUTPUT}"
+
+          echo "Latest upstream tag: ${latest_tag}"
+          echo "OpenAPI source URL: ${source_url}"
+          echo "Should run regeneration: ${should_run}"
+
+  regenerate:
+    name: Regenerate SDK (${{ matrix.os }}, py${{ matrix.python-version }})
+    needs: detect-upstream
+    if: needs.detect-upstream.outputs.should_run == 'true'
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        python-version: ["3.10", "3.11"]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip
+          python -m pip install pyyaml openapi-python-client pytest build
+          python -m pip install -e .
+
+      - name: Fetch latest upstream openapi.yaml
+        shell: bash
+        env:
+          SOURCE_URL: ${{ needs.detect-upstream.outputs.source_url }}
+        run: |
+          set -euo pipefail
+          mkdir -p .tmp
+          curl -fL --retry 3 --retry-all-errors "${SOURCE_URL}" -o .tmp/openapi.upstream.yaml
+          test -s .tmp/openapi.upstream.yaml
+
+      - name: Run OpenAPI auto-fixes
+        shell: bash
+        run: |
+          set -euo pipefail
+          python scripts/fix_openapi.py \
+            --input .tmp/openapi.upstream.yaml \
+            --output .tmp/openapi.fixed.yaml
+
+      - name: Fail on breaking API changes
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from __future__ import annotations
+
+          from pathlib import Path
+          import sys
+          import yaml
+
+          BASELINE = Path("generated/openapi.fixed.yaml")
+          CANDIDATE = Path(".tmp/openapi.fixed.yaml")
+
+          if not BASELINE.exists():
+            print("No baseline spec found at generated/openapi.fixed.yaml; skipping breaking-change gate for first run.")
+            raise SystemExit(0)
+
+          with BASELINE.open("r", encoding="utf-8") as f:
+            old = yaml.safe_load(f)
+          with CANDIDATE.open("r", encoding="utf-8") as f:
+            new = yaml.safe_load(f)
+
+          old_paths = old.get("paths", {}) if isinstance(old, dict) else {}
+          new_paths = new.get("paths", {}) if isinstance(new, dict) else {}
+          methods = {"get", "post", "put", "patch", "delete", "options", "head", "trace"}
+
+
+          def operation_map(paths: dict):
+            out = {}
+            for p, item in paths.items():
+              if not isinstance(item, dict):
+                continue
+              for m, op in item.items():
+                ml = str(m).lower()
+                if ml in methods and isinstance(op, dict):
+                  out[(p, ml)] = op
+            return out
+
+          old_ops = operation_map(old_paths)
+          new_ops = operation_map(new_paths)
+
+          breaking = []
+
+          # 1) Endpoint/method removals are breaking.
+          for key in old_ops:
+            if key not in new_ops:
+              breaking.append(f"Removed operation: {key[1].upper()} {key[0]}")
+
+          # 2) New required parameters are breaking.
+          for key, old_op in old_ops.items():
+            if key not in new_ops:
+              continue
+            new_op = new_ops[key]
+
+            def req_params(op):
+              req = set()
+              for p in op.get("parameters", []) or []:
+                if not isinstance(p, dict):
+                  continue
+                if p.get("required") is True:
+                  req.add((p.get("in", ""), p.get("name", "")))
+              return req
+
+            old_req = req_params(old_op)
+            new_req = req_params(new_op)
+            added_req = sorted(new_req - old_req)
+            for inp, name in added_req:
+              breaking.append(
+                f"Added required parameter in {key[1].upper()} {key[0]}: in={inp}, name={name}"
+              )
+
+            old_rb = old_op.get("requestBody") if isinstance(old_op, dict) else None
+            new_rb = new_op.get("requestBody") if isinstance(new_op, dict) else None
+            old_required_rb = isinstance(old_rb, dict) and old_rb.get("required") is True
+            new_required_rb = isinstance(new_rb, dict) and new_rb.get("required") is True
+            if not old_required_rb and new_required_rb:
+              breaking.append(f"Request body became required: {key[1].upper()} {key[0]}")
+
+          if breaking:
+            print("Breaking API changes detected:")
+            for line in breaking:
+              print(f"- {line}")
+            sys.exit(1)
+
+          print("No breaking API changes detected.")
+          PY
+
+      - name: Generate SDK (replace generated code only)
+        shell: bash
+        env:
+          OPENAPI_SRC: ${{ github.workspace }}/.tmp/openapi.upstream.yaml
+          RUN_TESTS: "0"
+          BUILD_PACKAGE: "0"
+        run: |
+          set -euo pipefail
+          ./scripts/regenerate_sdk.sh
+
+      - name: Run tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -d tests ]] && find tests -type f | grep -q .; then
+            python -m pytest tests -q
+          else
+            echo "No tests found; skipping."
+          fi
+
+      - name: Build wheel and sdist
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m build .
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: sdk-dist-${{ matrix.os }}-py${{ matrix.python-version }}-${{ needs.detect-upstream.outputs.upstream_tag }}
+          path: |
+            dist/*
+            .tmp/openapi.upstream.yaml
+            .tmp/openapi.fixed.yaml
+          if-no-files-found: error
+
+  mark-processed:
+    name: Mark Upstream Tag Processed
+    needs: [detect-upstream, regenerate]
+    if: needs.detect-upstream.outputs.should_run == 'true' && success()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Create marker tag
+        shell: bash
+        env:
+          UPSTREAM_TAG: ${{ needs.detect-upstream.outputs.upstream_tag }}
+        run: |
+          set -euo pipefail
+          marker_tag="sdk-sync/${UPSTREAM_TAG}"
+          git fetch --tags --force origin
+          if git rev-parse "refs/tags/${marker_tag}" >/dev/null 2>&1; then
+            echo "Marker tag already exists: ${marker_tag}"
+            exit 0
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          git tag "${marker_tag}" "${GITHUB_SHA}"
+          git push origin "refs/tags/${marker_tag}"
+
+          echo "Created marker tag: ${marker_tag}"
+
+  no-op:
+    name: No New Upstream Tag
+    needs: detect-upstream
+    if: needs.detect-upstream.outputs.should_run != 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Skip message
+        run: |
+          echo "No new upstream release tag detected."
+          echo "Latest tag: ${{ needs.detect-upstream.outputs.upstream_tag }}"
