@@ -10,8 +10,9 @@ from src import meta_agent
 
 @pytest.fixture(autouse=True)
 def reset_graph(monkeypatch):
-    monkeypatch.setattr(meta_agent, "_graph", None)
+    monkeypatch.setattr(meta_agent, "_graphs", {})
     monkeypatch.setattr(meta_agent, "load_config", lambda _path: {"use_case_id": "case"})
+    monkeypatch.setenv("AGENT_MODE", "sequential")
 
 
 def _install_successful_agents(monkeypatch):
@@ -28,6 +29,7 @@ def test_successful_graph_returns_consistent_results(monkeypatch):
 
     assert result == {
         "use_case_id": "case",
+        "routing": {},
         "policy": {"policy": True},
         "analysis": {"analysis": True},
         "evidence": {"evidence": True},

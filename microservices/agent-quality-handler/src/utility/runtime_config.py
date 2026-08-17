@@ -137,6 +137,7 @@ class RuntimeSettings:
     agents_config_path: str
     prompts_dir: str
     fallback_policy_path: str
+    agent_mode: str
 
 
 def load_runtime_settings(*, validate_assets: bool = True) -> RuntimeSettings:
@@ -144,6 +145,10 @@ def load_runtime_settings(*, validate_assets: bool = True) -> RuntimeSettings:
     llm_mode = os.environ.get("LLM_MODE", "fallback").strip().lower()
     if llm_mode not in {"llm", "fallback"}:
         raise ConfigurationError("LLM_MODE must be 'llm' or 'fallback'")
+
+    agent_mode = os.environ.get("AGENT_MODE", "routing").strip().lower()
+    if agent_mode not in {"routing", "sequential"}:
+        raise ConfigurationError("AGENT_MODE must be 'routing' or 'sequential'")
 
     storage_url = _validate_http_url(
         "STORAGE_SERVICE_URL",
@@ -263,6 +268,7 @@ def load_runtime_settings(*, validate_assets: bool = True) -> RuntimeSettings:
         agents_config_path=agents_config_path,
         prompts_dir=prompts_dir,
         fallback_policy_path=fallback_policy_path,
+        agent_mode=agent_mode,
     )
 
 
