@@ -143,7 +143,7 @@ The MCP server uses the same environment variables as the REST API:
 
 | Variable | Description | Default |
 |---|---|---|
-| `MODELS_DIR` | Base directory for downloaded models | `/opt/models` |
+| `MODELS_DIR` | Base directory for downloaded models | `./models` locally; `/opt/models` in the container |
 | `HF_TOKEN` | HuggingFace API token (for gated models) | — |
 | `ENABLED_PLUGINS` | Comma-separated list of plugins to activate | `all` |
 

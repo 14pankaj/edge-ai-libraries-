@@ -36,9 +36,9 @@ from src.core.interfaces import ListingAuthError, ListingNotSupportedError
 from src.core.model_manager import ModelManager
 from src.core.model_submission import ModelSubmissionError, submit_models
 from src.core.plugin_registry import PluginRegistry
+from src.mcp.prompts import register_skill_prompts
 from src.utils.helper import get_hub_config_keys
 from src.utils.logging import logger
-from src.mcp.prompts import register_skill_prompts
 
 # ---------------------------------------------------------------------------
 # Shared core initialisation (same as FastAPI's module-level setup)
@@ -48,7 +48,7 @@ plugin_registry = PluginRegistry()
 plugins_package = importlib.import_module("src.plugins")
 plugin_registry.discover_plugins(plugins_package)
 
-models_dir = os.getenv("MODELS_DIR", "/opt/models")
+models_dir = os.getenv("MODELS_DIR", "./models")
 model_manager = ModelManager(plugin_registry, default_dir=models_dir)
 
 _background_tasks: set[asyncio.Task[Any]] = set()
@@ -75,9 +75,9 @@ if _prompt_count:
 # ---- helpers ---------------------------------------------------------------
 
 
-def _serialize_jobs(jobs: Dict[str, Any]) -> List[Dict[str, Any]]:
-    """Return a JSON-safe list of all job records."""
-    return list(jobs.values())
+def _job_snapshots() -> List[Dict[str, Any]]:
+    """Return thread-safe copies of all job records."""
+    return model_manager.list_jobs(limit=2**31 - 1)
 
 
 def _plugin_info() -> Dict[str, Any]:
@@ -232,15 +232,16 @@ def get_job_status(job_id: str) -> dict:
     Returns:
         The full job record including status, model_name, hub, output_dir, etc.
     """
-    if job_id not in model_manager._jobs:
+    job = model_manager.get_job_status(job_id)
+    if job is None:
         return {"error": f"Job {job_id} not found"}
-    return dict(model_manager._jobs[job_id])
+    return job
 
 
 @mcp.tool
 def list_jobs() -> dict:
     """List all jobs (queued, running, completed, failed, cancelled)."""
-    return {"jobs": _serialize_jobs(model_manager._jobs)}
+    return {"jobs": _job_snapshots()}
 
 
 @mcp.tool
@@ -253,10 +254,10 @@ def cancel_job(job_id: str) -> dict:
     Returns:
         Confirmation message or error details.
     """
-    if job_id not in model_manager._jobs:
+    job = model_manager.get_job_status(job_id)
+    if job is None:
         return {"error": f"Job {job_id} not found"}
 
-    job = model_manager._jobs[job_id]
     if job["status"] in ("completed", "failed", "canceled"):
         return {
             "error": f"Job {job_id} is already in terminal state '{job['status']}'"
@@ -280,7 +281,7 @@ def get_model_jobs(model_name: str) -> dict:
         A list of matching job records.
     """
     model_jobs = [
-        job for job in model_manager._jobs.values() if job.get("model_name") == model_name
+        job for job in _job_snapshots() if job.get("model_name") == model_name
     ]
     if not model_jobs:
         return {"error": f"No jobs found for model '{model_name}'"}
@@ -291,11 +292,11 @@ def get_model_jobs(model_name: str) -> dict:
 def get_model_results() -> dict:
     """Get completed model downloads and conversions."""
     completed = []
-    for job_id, job in model_manager._jobs.items():
+    for job in _job_snapshots():
         if job.get("status") == "completed":
             operation_type = job.get("operation_type")
             result: Dict[str, Any] = {
-                "job_id": job_id,
+                "job_id": job.get("id"),
                 "model_name": job.get("model_name"),
                 "hub": job.get("hub"),
                 "operation_type": operation_type,
@@ -404,26 +405,27 @@ async def list_hub_models(
 @mcp.resource("models://jobs", mime_type="application/json")
 def resource_jobs() -> str:
     """All model download/conversion jobs."""
-    return json.dumps({"jobs": _serialize_jobs(model_manager._jobs)}, default=str)
+    return json.dumps({"jobs": _job_snapshots()}, default=str)
 
 
 @mcp.resource("models://jobs/{job_id}", mime_type="application/json")
 def resource_job(job_id: str) -> str:
     """A specific job record by ID."""
-    if job_id not in model_manager._jobs:
+    job = model_manager.get_job_status(job_id)
+    if job is None:
         return json.dumps({"error": f"Job {job_id} not found"})
-    return json.dumps(dict(model_manager._jobs[job_id]), default=str)
+    return json.dumps(job, default=str)
 
 
 @mcp.resource("models://results", mime_type="application/json")
 def resource_results() -> str:
     """Completed model downloads and conversions."""
     completed = []
-    for job_id, job in model_manager._jobs.items():
+    for job in _job_snapshots():
         if job.get("status") == "completed":
             completed.append(
                 {
-                    "job_id": job_id,
+                    "job_id": job.get("id"),
                     "model_name": job.get("model_name"),
                     "hub": job.get("hub"),
                     "model_path": job.get("output_dir"),

@@ -24,6 +24,14 @@ def _patch_core_init(monkeypatch):
     mock_manager = MagicMock()
     mock_manager._jobs = {}
     mock_manager.default_dir = "/opt/models"
+    mock_manager.get_job_status.side_effect = lambda job_id: (
+        dict(mock_manager._jobs[job_id])
+        if job_id in mock_manager._jobs
+        else None
+    )
+    mock_manager.list_jobs.side_effect = lambda **_kwargs: [
+        dict(job) for job in mock_manager._jobs.values()
+    ]
 
     # Patch at module level before import
     with (
