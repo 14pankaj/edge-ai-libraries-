@@ -22,16 +22,21 @@ _SKILL_DIR = (
 _EXAMPLES_DIR = _SKILL_DIR / "example-prompts"
 _SKILL_FILE = _SKILL_DIR / "SKILL.md"
 _HEADING_PATTERN = re.compile(r"^##\s+(.+?)\s*$", re.MULTILINE)
-_LICENSE_COMMENT_PATTERN = re.compile(r"^\s*<!--.*?-->\s*", re.DOTALL)
+_HTML_COMMENT_PATTERN = re.compile(r"<!--.*?-->", re.DOTALL)
 
 
 def _prompt_name(path: Path) -> str:
     return path.stem.lower().replace("-", "_")
 
 
+def _strip_html_comments(content: str) -> str:
+    """Remove Markdown HTML comment blocks from content exposed to MCP clients."""
+
+    return _HTML_COMMENT_PATTERN.sub("", content).strip()
+
+
 def _description(content: str, fallback: str) -> str:
-    cleaned = _LICENSE_COMMENT_PATTERN.sub("", content, count=1).strip()
-    for line in cleaned.splitlines():
+    for line in content.splitlines():
         candidate = line.strip().lstrip("#").strip()
         if candidate:
             return candidate[:200]
@@ -74,7 +79,9 @@ def register_skill_prompts(mcp: FastMCP) -> int:
     if _EXAMPLES_DIR.is_dir():
         for prompt_path in sorted(_EXAMPLES_DIR.glob("*.md")):
             try:
-                content = prompt_path.read_text(encoding="utf-8").strip()
+                content = _strip_html_comments(
+                    prompt_path.read_text(encoding="utf-8")
+                )
             except OSError as exc:
                 logger.warning(
                     "mcp_prompt_read_failed",
@@ -95,7 +102,9 @@ def register_skill_prompts(mcp: FastMCP) -> int:
 
     if _SKILL_FILE.is_file():
         try:
-            skill_content = _SKILL_FILE.read_text(encoding="utf-8")
+            skill_content = _strip_html_comments(
+                _SKILL_FILE.read_text(encoding="utf-8")
+            )
         except OSError as exc:
             logger.warning(
                 "mcp_skill_read_failed",

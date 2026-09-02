@@ -1136,6 +1136,7 @@ version = "1.0.1"
 source = { virtual = "." }
 dependencies = [
     { name = "fastapi" },
+    { name = "fastmcp" },
     { name = "huggingface-hub", extra = ["cli", "hf-transfer", "hf-xet"] },
     { name = "pydantic" },
     { name = "python-multipart" },
@@ -1173,9 +1174,6 @@ huggingface = [
     { name = "torchvision" },
     { name = "transformers" },
 ]
-mcp = [
-    { name = "fastmcp" },
-]
 ultralytics = [
     { name = "torch" },
     { name = "torchvision" },
@@ -1185,7 +1183,7 @@ ultralytics = [
 [package.metadata]
 requires-dist = [
     { name = "fastapi", specifier = "==0.141.1" },
-    { name = "fastmcp", marker = "extra == 'mcp'", specifier = ">=3.0,<4.0" },
+    { name = "fastmcp", specifier = ">=3.0,<4.0" },
     { name = "freezegun", marker = "extra == 'dev'", specifier = ">=1.5.0,<2.0.0" },
     { name = "geti-sdk", marker = "extra == 'geti'", specifier = "==2.13.1" },
     { name = "httpx", marker = "extra == 'dev'", specifier = ">=0.24.1,<1.0.0" },
@@ -1214,7 +1212,7 @@ requires-dist = [
     { name = "ultralytics", marker = "extra == 'ultralytics'", specifier = "==8.2.3" },
     { name = "uvicorn", specifier = "==0.38.0" },
 ]
-provides-extras = ["dev", "mcp", "cpu", "huggingface", "ultralytics", "openvino", "ollama", "geti", "hls", "pipeline-zoo-models", "remote-url", "omz"]
+provides-extras = ["dev", "cpu", "huggingface", "ultralytics", "openvino", "ollama", "geti", "hls", "pipeline-zoo-models", "remote-url", "omz"]
 
 [[package]]
 name = "more-itertools"

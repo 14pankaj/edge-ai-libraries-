@@ -53,6 +53,22 @@ model_manager = ModelManager(plugin_registry, default_dir=models_dir)
 
 _background_tasks: set[asyncio.Task[Any]] = set()
 
+
+def configure_runtime(
+    registry: PluginRegistry,
+    manager: ModelManager,
+    runtime_models_dir: str,
+    background_tasks: set[asyncio.Task[Any]],
+) -> None:
+    """Use an application's shared model-download runtime."""
+
+    global plugin_registry, model_manager, models_dir, _background_tasks
+    plugin_registry = registry
+    model_manager = manager
+    models_dir = runtime_models_dir
+    _background_tasks = background_tasks
+
+
 # ---------------------------------------------------------------------------
 # FastMCP server
 # ---------------------------------------------------------------------------

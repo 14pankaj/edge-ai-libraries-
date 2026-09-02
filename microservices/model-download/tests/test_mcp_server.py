@@ -248,7 +248,8 @@ class TestResources:
 
 
 class TestPromptLoading:
-    def test_register_skill_prompts_with_files(self, mocks, tmp_path):
+    @pytest.mark.asyncio
+    async def test_register_skill_prompts_with_files(self, mocks, tmp_path):
         """Prompts are registered when skill example files exist."""
         from fastmcp import FastMCP
         from src.mcp.prompts import register_skill_prompts
@@ -257,7 +258,11 @@ class TestPromptLoading:
         examples_dir = tmp_path / "examples-prompts"
         examples_dir.mkdir()
         (examples_dir / "huggingface.md").write_text(
-            "<!-- license -->\nDownload a HuggingFace model.\n- Step one\n- Step two\n"
+            "<!-- license -->\n"
+            "Download a HuggingFace model.\n"
+            "<!--\nInternal implementation note.\n-->\n"
+            "- Step one\n"
+            "- Step two\n"
         )
         (examples_dir / "ollama.md").write_text(
             "Pull llama3.2:3b through the API.\n"
@@ -279,6 +284,13 @@ class TestPromptLoading:
 
         # 2 example prompts + 1 hub_guide = 3
         assert count == 3
+        prompt = await test_mcp.get_prompt("huggingface")
+        rendered = await prompt.render()
+        text = rendered.messages[0].content.text
+        assert "<!--" not in text
+        assert "license" not in text
+        assert "Internal implementation note." not in text
+        assert "Download a HuggingFace model." in text
 
     def test_register_skill_prompts_no_dir(self, mocks, tmp_path):
         """Gracefully handles missing skill directory."""
