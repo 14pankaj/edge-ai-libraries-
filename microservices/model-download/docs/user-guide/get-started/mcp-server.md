@@ -28,6 +28,14 @@ uv run python -m src.mcp --transport http --port 8080
 uv run fastmcp run src/mcp/server.py:mcp --transport http --port 8080
 ```
 
+#### Using run_service.sh
+
+```bash
+# REST API and MCP server
+source scripts/run_service.sh --plugins huggingface,openvino
+```
+Connect remote MCP clients to `http://localhost:8200/mcp`.
+
 ### Container Deployment
 
 The default container serves both interfaces on the same port:
@@ -36,15 +44,6 @@ The default container serves both interfaces on the same port:
 |---|---|
 | REST API | Existing REST endpoints on `http://localhost:8200` |
 | MCP server | `http://localhost:8200/mcp` |
-
-#### Using run_service.sh
-
-```bash
-# REST API and MCP server
-source scripts/run_service.sh --plugins huggingface,openvino
-```
-
-Connect remote MCP clients to `http://localhost:8200/mcp`.
 
 ## Available MCP Tools
 
@@ -117,10 +116,10 @@ Add to `~/.copilot/mcp-config.json`:
 }
 ```
 
-Use an absolute project path. MCP clients execute `command` directly, so shell
+***Use an absolute project path. MCP clients execute `command` directly, so shell
 operators such as `cd` and `|` must not be included in `args`. The standalone
 server writes application logs to stderr to keep stdout reserved for stdio
-JSON-RPC messages.
+JSON-RPC messages.***
 
 ## Verify the MCP Connection
 
