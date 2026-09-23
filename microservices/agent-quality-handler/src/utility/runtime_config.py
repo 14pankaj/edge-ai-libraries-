@@ -214,7 +214,7 @@ def load_runtime_settings(*, validate_assets: bool = True) -> RuntimeSettings:
     ).rstrip("/")
     if llm_mode == "llm":
         llm_base_url = _validate_http_url("LLM_BASE_URL", llm_base_url)
-    llm_model_name = os.environ.get("LLM_MODEL_NAME", "Phi-4-mini-instruct").strip()
+    llm_model_name = os.environ.get("LLM_MODEL_NAME", "Qwen2.5-3B-Instruct").strip()
     if llm_mode == "llm" and not llm_model_name:
         raise ConfigurationError("LLM_MODEL_NAME is required in LLM mode")
     llm_api_key = os.environ.get("LLM_API_KEY", "UNUSED").strip() or "UNUSED"

@@ -1,11 +1,12 @@
 # Copyright (C) 2026 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
-"""Deep Agent runner — wraps specialist agents as LangChain tools and delegates
-execution to ``create_deep_agent()`` for LLM-mode routing.
+"""Deep Agent runner — wraps specialist agents as LangChain tools and uses an
+OVMS structured-output plan (rather than native LLM tool-calling, which small
+locally-served models often fail to emit) to drive LLM-mode routing.
 
-The deep agent receives a routing decision (severity + route) and executes
-only the selected specialist agents via tool calls.
+The deep agent receives a routing decision (severity + route) and directly
+invokes the selected specialist agents, guaranteeing they run.
 """
 
 from __future__ import annotations
@@ -64,9 +65,8 @@ def _make_analysis_tool(
         Pass the policy result JSON string from run_policy_agent if available.
         """
         try:
-            policy_result = json.loads(policy_result_json) if policy_result_json else None
             result = analysis_agent.run(
-                use_case_id, config, prompts_dir, policy_result, None, min_id, max_id
+                use_case_id, config, prompts_dir, None, min_id, max_id
             )
             return json.dumps(result, default=str)
         except Exception as exc:
@@ -160,11 +160,13 @@ def run_deep_agent(
 ) -> dict[str, Any]:
     """Execute the deep agent with routing-aware tool invocation.
 
-    Uses ``create_deep_agent()`` from the deepagents library to orchestrate
-    tool-calling.  The agent receives the routing decision and is instructed
-    to call only the agents in the route.
+    Asks the LLM for a structured execution plan (via OVMS structured output)
+    and then directly invokes the specialist-agent tools for every agent in
+    the routing decision's route, guaranteeing they run even if the model's
+    plan is incomplete or malformed.
 
-    Falls back to direct sequential execution if deepagents is unavailable.
+    Falls back to plain direct sequential execution if anything unexpected
+    (e.g. import errors) prevents the structured-plan path from running.
     """
     tools = build_tools(use_case_id, config, prompts_dir, min_id, max_id)
 
@@ -172,7 +174,7 @@ def run_deep_agent(
         return _run_with_deep_agent(routing_decision, tools, config)
     except ImportError:
         log.warning(
-            "deepagents not available; falling back to direct tool execution"
+            "langchain_openai not available; falling back to direct tool execution"
         )
         return _run_tools_directly(routing_decision, tools)
 
@@ -182,35 +184,83 @@ def _run_with_deep_agent(
     tools: list,
     config: dict,
 ) -> dict[str, Any]:
-    """Execute via create_deep_agent()."""
-    from deepagents import create_deep_agent
+    """Execute the deep agent's plan using OVMS structured output.
+
+    Small, locally-served models frequently fail to emit OpenAI-style
+    ``tool_calls`` (e.g. they answer conversationally or use a model-specific
+    tag format the server's tool parser isn't configured for), so
+    ``create_deep_agent()``'s native tool-calling loop can silently invoke no
+    subagents at all.
+
+    Instead, we ask the model for a structured execution plan using OVMS's
+    guided/structured output (``response_format`` json-schema enforcement, see
+    https://docs.openvino.ai/2025/model-server/ovms_structured_output.html),
+    which is reliably honored even by small models. We then invoke the
+    specialist-agent tools ourselves, guaranteeing every agent in the routing
+    decision's route actually runs regardless of what the model returns.
+    """
+    from langchain_openai import ChatOpenAI
+    from pydantic import BaseModel, Field
+
     from ..utility.runtime_config import load_runtime_settings
 
     settings = load_runtime_settings()
 
-    agent = create_deep_agent(
-        model=f"openai:{settings.llm_model_name}",
-        tools=tools,
-        model_kwargs={
-            "base_url": settings.llm_base_url,
-            "api_key": settings.llm_api_key,
-        },
+    model = ChatOpenAI(
+        model=settings.llm_model_name,
+        base_url=settings.llm_base_url,
+        api_key=settings.llm_api_key,
     )
+
+    class AgentInvocation(BaseModel):
+        agent: str = Field(
+            description="One of: policy, analysis, evidence, ticketing"
+        )
+        reason: str = Field(default="", description="Why this agent runs next")
+
+    class AgentExecutionPlan(BaseModel):
+        calls: list[AgentInvocation] = Field(
+            description="Ordered list of agents to invoke"
+        )
 
     route_list = ", ".join(routing_decision.route)
     prompt = (
         f"You are an agentic predictive maintenance system. "
         f"A detection batch has been classified as {routing_decision.severity.value} severity.\n"
         f"Reason: {routing_decision.reason}\n\n"
-        f"Execute ONLY these agents in order: {route_list}.\n"
-        f"Pass results between agents as needed (policy result to analysis, "
-        f"policy+analysis results to ticketing).\n"
-        f"Return a JSON summary of all agent outputs."
+        f"The allowed agents to execute, in the required order, are: {route_list}.\n"
+        f"Return the execution plan as an ordered list of agent calls."
     )
 
-    response = agent.invoke({"messages": [{"role": "user", "content": prompt}]})
+    ordered_agents: list[str] = []
+    try:
+        plan = model.with_structured_output(AgentExecutionPlan).invoke(prompt)
+        allowed = set(routing_decision.route)
+        seen: set[str] = set()
+        for call in plan.calls:
+            if call.agent in allowed and call.agent not in seen:
+                seen.add(call.agent)
+                ordered_agents.append(call.agent)
+    except Exception as exc:
+        log.warning(
+            "Structured execution plan generation failed (%s); using routing order",
+            exc,
+        )
 
-    return _extract_results(response, routing_decision)
+    # Guarantee every agent in the routing decision runs, even if the model's
+    # plan omitted some or structured output generation failed entirely.
+    for agent_name in routing_decision.route:
+        if agent_name not in ordered_agents:
+            ordered_agents.append(agent_name)
+
+    forced_route = RoutingDecision(
+        severity=routing_decision.severity,
+        reason=routing_decision.reason,
+        route=ordered_agents,
+        summary=routing_decision.summary,
+    )
+    results = _run_tools_directly(forced_route, tools)
+    return {"routing": routing_decision.to_dict(), **results}
 
 
 def _run_tools_directly(
@@ -252,27 +302,5 @@ def _run_tools_directly(
             results[agent_name] = json.loads(raw)
         except (json.JSONDecodeError, TypeError):
             results[agent_name] = {"raw": raw}
-
-    return results
-
-
-def _extract_results(
-    response: Any, routing_decision: RoutingDecision
-) -> dict[str, Any]:
-    """Extract structured results from the deep agent response."""
-    results: dict[str, Any] = {
-        "routing": routing_decision.to_dict(),
-    }
-
-    if hasattr(response, "get") and "messages" in response:
-        messages = response["messages"]
-        if messages:
-            last = messages[-1]
-            content = last.content if hasattr(last, "content") else str(last)
-            try:
-                parsed = json.loads(content)
-                results.update(parsed)
-            except (json.JSONDecodeError, TypeError):
-                results["raw_output"] = content
 
     return results

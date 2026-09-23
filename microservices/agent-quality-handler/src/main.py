@@ -127,8 +127,8 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(
-    title="aqh Agent Service",
-    description="Event-driven Agentic Predictive Maintenance reasoning service",
+    title="Agent Quality handler Service",
+    description="The Agent Quality Handler is a standalone, configuration-driven agent service. It reads detections from an external storage API and runs the Policy, Analysis, Evidence, and Ticketing agents. ",
     version="1.0.0",
     lifespan=lifespan,
 )
