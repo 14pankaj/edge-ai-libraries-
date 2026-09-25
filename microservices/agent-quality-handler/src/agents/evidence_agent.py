@@ -11,6 +11,25 @@ from ..utility import llm_client, storage_client, prompt_loader
 
 log = logging.getLogger(__name__)
 
+_BBOX_FIELDS = ("x", "y", "width", "height")
+_CORE_FIELDS = {"frame_id", "confidence", "label", *_BBOX_FIELDS}
+
+
+def _build_detection_entry(d: dict) -> dict:
+    """Build one audit-trail entry for a detection record.
+    """
+    entry: dict[str, Any] = {
+        "frame_id": d.get("frame_id"),
+        "confidence": round(d.get("confidence", 0.0), 3),
+    }
+    if all(field in d and d[field] is not None for field in _BBOX_FIELDS):
+        entry["bbox"] = [d[field] for field in _BBOX_FIELDS]
+    else:
+        metadata = {k: v for k, v in d.items() if k not in _CORE_FIELDS and v is not None}
+        if metadata:
+            entry["metadata"] = metadata
+    return entry
+
 
 def run(
     use_case_id: str,
@@ -38,11 +57,7 @@ def run(
             min_id=min_id,
             max_id=max_id,
         )
-        top_detections[label] = [
-            {"frame_id": d["frame_id"], "confidence": round(d["confidence"], 3),
-             "bbox": [d["x"], d["y"], d["width"], d["height"]]}
-            for d in records
-        ]
+        top_detections[label] = [_build_detection_entry(d) for d in records]
 
     evidence_data = {
         "summary": summary,

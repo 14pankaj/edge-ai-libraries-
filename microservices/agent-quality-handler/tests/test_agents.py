@@ -237,6 +237,40 @@ def test_evidence_agent_fallback(monkeypatch):
     assert result["max_confidence"] == 0.9
 
 
+# ── evidence_agent (_build_detection_entry: vision vs. sensor/fused) ─────────
+
+def test_build_detection_entry_uses_bbox_when_vision_fields_present():
+    from src.agents.evidence_agent import _build_detection_entry
+
+    entry = _build_detection_entry(
+        {"frame_id": 7, "label": "Rupture", "confidence": 0.91,
+         "x": 10, "y": 20, "width": 30, "height": 40}
+    )
+    assert entry["bbox"] == [10, 20, 30, 40]
+    assert "metadata" not in entry
+
+
+def test_build_detection_entry_falls_back_to_metadata_without_bbox():
+    from src.agents.evidence_agent import _build_detection_entry
+
+    entry = _build_detection_entry(
+        {"frame_id": 12, "label": "VibrationSpike", "confidence": 0.77,
+         "sensor_id": "vib-042", "value": 3.4, "modality": "timeseries"}
+    )
+    assert "bbox" not in entry
+    assert entry["metadata"] == {
+        "sensor_id": "vib-042", "value": 3.4, "modality": "timeseries",
+    }
+
+
+def test_build_detection_entry_omits_metadata_when_no_extra_fields():
+    from src.agents.evidence_agent import _build_detection_entry
+
+    entry = _build_detection_entry({"frame_id": 3, "label": "Obstacle", "confidence": 0.6})
+    assert "bbox" not in entry
+    assert "metadata" not in entry
+
+
 # ── ticketing_agent (fallback mode) ───────────────────────────────────────────
 
 def test_ticketing_agent_fallback(monkeypatch):
