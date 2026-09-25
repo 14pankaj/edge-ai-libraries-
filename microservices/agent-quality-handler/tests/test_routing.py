@@ -14,6 +14,7 @@ from src.routing.router import (
     _fallback_classify,
     _llm_classify,
 )
+from src.routing.route_utils import normalize_route
 
 
 # ── Fallback classification ──────────────────────────────────────────────────
@@ -153,6 +154,60 @@ def test_llm_classify_extracts_json_from_code_fence(monkeypatch):
 
     decision = _llm_classify("test-case", _summary([]), None)
     assert decision.severity == Severity.LOW
+
+
+def test_llm_classify_normalizes_out_of_order_and_duplicate_route(monkeypatch):
+    # LLM returns ticketing before its dependencies, plus a duplicate and an
+    # unknown agent name — all three should be fixed by normalize_route.
+    response = json.dumps({
+        "severity": "HIGH",
+        "reason": "Rupture detected",
+        "route": ["ticketing", "policy", "policy", "unknown_agent", "analysis"],
+    })
+    monkeypatch.setattr(
+        "src.routing.router.llm_client.call_llm",
+        lambda **kwargs: response,
+    )
+    monkeypatch.setattr(
+        "src.routing.router.prompt_loader.get_section",
+        lambda *args, **kwargs: "test prompt",
+    )
+
+    decision = _llm_classify("test-case", _summary([]), None)
+    assert decision.route == ["policy", "analysis", "ticketing"]
+
+
+# ── normalize_route ───────────────────────────────────────────────────────────
+
+def test_normalize_route_dedupes_and_drops_unknown_agents():
+    assert normalize_route(["policy", "policy", "bogus", "analysis"]) == [
+        "policy", "analysis",
+    ]
+
+
+def test_normalize_route_moves_ticketing_after_policy_and_analysis():
+    assert normalize_route(["ticketing", "policy", "analysis"]) == [
+        "policy", "analysis", "ticketing",
+    ]
+    assert normalize_route(["ticketing", "analysis"]) == ["analysis", "ticketing"]
+
+
+def test_normalize_route_leaves_independent_ordering_untouched():
+    # evidence has no dependency on analysis/policy — order between them is
+    # the LLM's choice and should be preserved.
+    assert normalize_route(["evidence", "analysis", "policy"]) == [
+        "evidence", "analysis", "policy",
+    ]
+
+
+def test_normalize_route_ticketing_only_needs_no_reorder():
+    # No policy/analysis in the route at all — ticketing can stay wherever
+    # it was (nothing to be unsafe about).
+    assert normalize_route(["ticketing", "evidence"]) == ["ticketing", "evidence"]
+
+
+def test_normalize_route_empty_input():
+    assert normalize_route([]) == []
 
 
 # ── Routing graph integration ────────────────────────────────────────────────

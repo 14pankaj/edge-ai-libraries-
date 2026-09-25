@@ -16,6 +16,7 @@ from enum import Enum
 from typing import Any
 
 from ..utility import llm_client, storage_client, prompt_loader
+from .route_utils import normalize_route
 
 log = logging.getLogger(__name__)
 
@@ -130,13 +131,22 @@ def _llm_classify(
         severity = Severity.HIGH
 
     reason = parsed.get("reason", "Classified by LLM")
-    route = parsed.get("route", SEVERITY_ROUTES[severity])
+    raw_route = parsed.get("route", SEVERITY_ROUTES[severity])
+    if not isinstance(raw_route, list):
+        raw_route = SEVERITY_ROUTES[severity]
 
-    # Validate route contains only known agents
-    valid_agents = {"policy", "analysis", "evidence", "ticketing"}
-    route = [a for a in route if a in valid_agents]
+    # Normalize: drop unknown agent names, dedupe, and guarantee ticketing
+    # runs after policy/analysis regardless of the order the LLM returned.
+    route = normalize_route(raw_route)
     if not route:
         route = SEVERITY_ROUTES[severity]
+    elif route != raw_route:
+        log.info(
+            "Router route normalized for dependency-safety/dedup: "
+            "llm_route=%s effective_route=%s",
+            raw_route,
+            route,
+        )
 
     return RoutingDecision(
         severity=severity, reason=reason, route=route, summary=summary

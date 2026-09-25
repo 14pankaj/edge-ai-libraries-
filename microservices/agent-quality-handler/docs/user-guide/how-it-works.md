@@ -67,6 +67,29 @@ limits as the run registry.
 
 Graph failures are explicit: the run status becomes `error`, while successful partial outputs remain in the result with a structured `errors` list. Unexpected pipeline exceptions use the same error status and identify the failure as the `pipeline` agent.
 
+## Dynamic Agent Routing (LLM Mode)
+
+In LLM mode, which agents run — and in what order — is not always the fixed
+Policy → Analysis → Evidence → Ticketing chain:
+
+- The router asks the LLM to classify severity and may
+  return its own `route`: a subset and ordering of `policy`/`analysis`/
+  `evidence`/`ticketing`.
+- The deep-agent runner asks the LLM for a
+  further execution plan, which can reorder or narrow that route again.
+
+Both stages pass their result through,
+which deduplicates the agent list, drops any unrecognized agent name, and
+**always moves `ticketing` to run after `policy`/`analysis`** if either is
+present — since ticketing consumes their output — regardless of what order
+the LLM proposed. Agents with no such dependency (e.g. `evidence` relative to
+`analysis`) keep the LLM's requested ordering. Whenever normalization changes
+the order, this is logged
+so the effective execution order stays observable.
+
+Fallback (rule-based) mode is unaffected: its routes are fixed lookups from
+`SEVERITY_ROUTES`, with no LLM involved to reorder.
+
 ## External Integrations
 
 - **Storage:** required; defaults to `http://host.docker.internal:5001`.

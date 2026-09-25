@@ -18,6 +18,7 @@ from typing import Any
 from langchain_core.tools import tool
 
 from ..agents import policy_agent, analysis_agent, evidence_agent, ticketing_agent
+from .route_utils import normalize_route
 from .router import RoutingDecision
 
 log = logging.getLogger(__name__)
@@ -236,10 +237,8 @@ def _run_with_deep_agent(
     try:
         plan = model.with_structured_output(AgentExecutionPlan).invoke(prompt)
         allowed = set(routing_decision.route)
-        seen: set[str] = set()
         for call in plan.calls:
-            if call.agent in allowed and call.agent not in seen:
-                seen.add(call.agent)
+            if call.agent in allowed and call.agent not in ordered_agents:
                 ordered_agents.append(call.agent)
     except Exception as exc:
         log.warning(
@@ -252,6 +251,19 @@ def _run_with_deep_agent(
     for agent_name in routing_decision.route:
         if agent_name not in ordered_agents:
             ordered_agents.append(agent_name)
+
+    # Normalize: dedupe (already implied above, but kept for safety) and
+    # guarantee ticketing runs after policy/analysis regardless of the order
+    # the model's plan requested.
+    normalized_agents = normalize_route(ordered_agents)
+    if normalized_agents != ordered_agents:
+        log.info(
+            "Deep-agent execution plan normalized for dependency-safety: "
+            "plan_order=%s effective_order=%s",
+            ordered_agents,
+            normalized_agents,
+        )
+    ordered_agents = normalized_agents or routing_decision.route
 
     forced_route = RoutingDecision(
         severity=routing_decision.severity,
