@@ -104,6 +104,7 @@ def _llm_classify(
         user_message=user_message,
         max_tokens=256,
         temperature=0.1,
+        agent_name="router",
     )
     log.info("Router LLM response received (%d chars)", len(raw))
 

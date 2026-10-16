@@ -34,6 +34,7 @@ from .routing.agent_registry import (
 from .routing.deep_agent_runner import run_deep_agent
 from .routing.router import RoutingDecision, Severity, classify
 from .utility.config_loader import get_use_case_id, load_config
+from .utility.llm_trace import capture_model_io
 from .utility.llm_client import is_fallback_mode
 from .utility.runtime_config import load_runtime_settings
 
@@ -394,7 +395,9 @@ def run_pipeline(
     }
 
     graph = get_graph(config=config)
-    final_state = graph.invoke(initial_state)
+    settings = load_runtime_settings(validate_assets=False)
+    with capture_model_io(enabled=settings.aqh_llm_trace_enabled) as model_io_trace:
+        final_state = graph.invoke(initial_state)
     errors = final_state.get("errors", [])
     result = {
         "use_case_id": use_case_id,
@@ -410,4 +413,6 @@ def run_pipeline(
     extra_agents = final_state.get("extra_agent_results", {})
     if extra_agents:
         result["extra_agents"] = extra_agents
+    if settings.aqh_llm_trace_enabled:
+        result["model_io_trace"] = model_io_trace
     return result

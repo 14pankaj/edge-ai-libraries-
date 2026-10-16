@@ -78,7 +78,12 @@ def run(context: AgentContext) -> dict[str, Any]:
         f"Evidence data:\n{json.dumps(evidence_data, indent=2)}"
     )
 
-    raw = llm_client.call_llm(system_prompt=system_prompt, user_message=user_message, max_tokens=600)
+    raw = llm_client.call_llm(
+        system_prompt=system_prompt,
+        user_message=user_message,
+        max_tokens=600,
+        agent_name="evidence",
+    )
     log.info("Evidence agent LLM response received (%d chars)", len(raw))
     return {"evidence": raw, "mode": "llm", "record_count": total_detections}
 
