@@ -139,6 +139,7 @@ class RuntimeSettings:
     prompts_dir: str
     fallback_policy_path: str
     agent_mode: str
+    aqh_llm_trace_enabled: bool
 
 
 def load_runtime_settings(*, validate_assets: bool = True) -> RuntimeSettings:
@@ -150,6 +151,7 @@ def load_runtime_settings(*, validate_assets: bool = True) -> RuntimeSettings:
     agent_mode = os.environ.get("AGENT_MODE", "routing").strip().lower()
     if agent_mode not in {"routing", "sequential"}:
         raise ConfigurationError("AGENT_MODE must be 'routing' or 'sequential'")
+    aqh_llm_trace_enabled = _as_bool("AQH_LLM_TRACE_ENABLED", False)
 
     storage_url = _validate_http_url(
         "STORAGE_SERVICE_URL",
@@ -271,6 +273,7 @@ def load_runtime_settings(*, validate_assets: bool = True) -> RuntimeSettings:
         agents_config_path=agents_config_path,
         prompts_dir=prompts_dir,
         fallback_policy_path=fallback_policy_path,
+        aqh_llm_trace_enabled=aqh_llm_trace_enabled,
         agent_mode=agent_mode,
     )
 

@@ -38,7 +38,12 @@ def run(context: AgentContext) -> dict[str, Any]:
         f"Detection statistics:\n{json.dumps(_compact_stats(detections), indent=2)}"
     )
 
-    raw = llm_client.call_llm(system_prompt=system_prompt, user_message=user_message)
+    raw = llm_client.call_llm(
+        system_prompt=system_prompt,
+        user_message=user_message,
+        max_tokens=800,
+        agent_name="analysis",
+    )
     log.info("Analysis agent LLM response received (%d chars)", len(raw))
     return {"report": raw, "mode": "llm", "total_detections": len(detections)}
 

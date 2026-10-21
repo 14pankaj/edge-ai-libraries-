@@ -155,6 +155,7 @@ def test_subscriber_reuses_broker_security_with_distinct_client(monkeypatch):
         mqtt_batch_client_id="aqh-batch-1",
         mqtt_username="agent",
         mqtt_password="secret",
+        aqh_llm_trace_enabled=False,
     )
 
     def create_client(*args, **kwargs):
@@ -179,6 +180,7 @@ def test_subscriber_reuses_broker_security_with_distinct_client(monkeypatch):
         "topic": "apm/batch-complete",
         "qos": 2,
         "max_payload_bytes": 8192,
+        "trace_enabled": False,
     }
     assert client.calls == [
         ("reconnect", 1, 120),

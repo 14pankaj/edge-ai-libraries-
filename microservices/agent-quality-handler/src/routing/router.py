@@ -103,6 +103,7 @@ def _llm_classify(
         system_prompt=system_prompt,
         user_message=user_message,
         temperature=0.1,
+        agent_name="router",
     )
     log.info("Router LLM response received (%d chars)", len(raw))
 

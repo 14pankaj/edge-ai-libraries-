@@ -20,6 +20,7 @@ from langchain_core.tools import tool
 
 from ..agents import policy_agent, analysis_agent, evidence_agent, ticketing_agent
 from ..agents.context import AgentContext
+from ..utility.llm_trace import record_model_io
 from .agent_registry import AgentSpec, load_registry, resolve_run_callable
 from .route_utils import normalize_route
 from .router import RoutingDecision
@@ -239,17 +240,27 @@ def _run_with_deep_agent(
     )
 
     ordered_agents: list[str] = []
+    planner_trace = {
+        "agent": "execution_planner",
+        "model": settings.llm_model_name,
+        "messages": [{"role": "user", "content": prompt}],
+        "structured_output_schema": AgentExecutionPlan.model_json_schema(),
+    }
     try:
         plan = model.with_structured_output(AgentExecutionPlan).invoke(prompt)
+        planner_trace["response"] = plan.model_dump()
         allowed = set(routing_decision.route)
         for call in plan.calls:
             if call.agent in allowed and call.agent not in ordered_agents:
                 ordered_agents.append(call.agent)
     except Exception as exc:
+        planner_trace["error"] = f"{type(exc).__name__}: {exc}"
         log.warning(
             "Structured execution plan generation failed (%s); using routing order",
             exc,
         )
+    finally:
+        record_model_io(planner_trace)
 
     # Guarantee every agent in the routing decision runs, even if the model's
     # plan omitted some or structured output generation failed entirely.
