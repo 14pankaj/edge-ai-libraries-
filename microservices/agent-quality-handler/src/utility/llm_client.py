@@ -38,7 +38,7 @@ def call_llm(
     system_prompt: str,
     user_message: str,
     model: str | None = None,
-    max_tokens: int = 2048,
+    max_tokens: int | None = None,
     temperature: float = 0.2,
     agent_name: str = "unspecified",
 ) -> str:
@@ -55,7 +55,7 @@ def call_llm(
             {"role": "user", "content": user_message},
         ],
         "parameters": {
-            "max_tokens": max_tokens,
+            "max_tokens": max_tokens or settings.llm_max_tokens,
             "temperature": temperature,
             "extra_body": {"chat_template_kwargs": {"enable_thinking": False}},
         },
@@ -65,7 +65,7 @@ def call_llm(
         response = client.chat.completions.create(
             model=request["model"],
             messages=request["messages"],
-            max_tokens=max_tokens,
+            max_tokens=request["parameters"]["max_tokens"],
             temperature=temperature,
             extra_body=request["parameters"]["extra_body"],
         )
