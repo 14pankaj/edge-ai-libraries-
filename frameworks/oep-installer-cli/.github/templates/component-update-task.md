@@ -1,10 +1,11 @@
-## Task: update `module/{{NAME}}/debian`
+## Task: update `frameworks/oep-installer-cli/module/{{NAME}}/debian`
 
 The spec file `{{SPEC_FILE}}` was modified in `main`.  The existing
 implementation in `module/{{NAME}}/debian` must be **updated in place** to
 enforce any new or changed requirements introduced by the spec edit.
 
-> **Note**: A maintainer added the `GENERATE-COMPONENT` label to authorise
+> [!NOTE]
+> A maintainer added the `GENERATE-COMPONENT` label to authorise
 > this task.  Do **not** rewrite the implementation from scratch — edit only
 > what the spec change requires.
 
@@ -104,6 +105,7 @@ If the spec changes a pinned version, tag, or workspace layout, `verify_{{NAME}}
 
    ```
    debian_<NN>_profile_{{NAME}}
+   debian_<NN>_group_{{NAME}}
    debian_<NN>_install_{{NAME}}
    debian_<NN>_remove_{{NAME}}
    debian_<NN>_start_{{NAME}}
@@ -131,7 +133,7 @@ If the spec changes a pinned version, tag, or workspace layout, `verify_{{NAME}}
 
 - **File location**: `module/{{NAME}}/debian` for Debian-specific functions;
   `module/{{NAME}}/linux` for distribution-agnostic functions. The location of the functions does not
-  make a difference but at least a `module/{{NAME}}/<ID_LIKE>` file must exist for the OEP bootstrapper to recognize the module.
+  make a difference but at least a `module/{{NAME}}/<OS_FAMILY>` file must exist for the OEP bootstrapper to recognize the module.
 
 - **Functions**: always implement `install`, `remove`, `start`, and `stop`.
   Omit `start`/`stop` only when the spec describes a stateless package with no
@@ -221,4 +223,5 @@ re-runs automatically.
 
 ---
 
-> **Note**: generated PRs must be reviewed by a human before merging.
+> [!NOTE]
+> generated PRs must be reviewed by a human before merging.

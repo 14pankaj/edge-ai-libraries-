@@ -2,15 +2,32 @@ import { useEffect, useMemo, useState } from "react";
 import type { Node } from "@xyflow/react";
 import { gvaMetaConvertConfig } from "./nodes/GVAMetaConvertNode.config.ts";
 import {
+  DEEP_SORT_TRACKING_TYPE,
   GVA_TRACKING_TYPES,
   gvaTrackConfig,
 } from "@/features/pipeline-editor/nodes/GVATrackNode.config.ts";
+import GVATrackNodeDeepSortParams from "@/features/pipeline-editor/nodes/GVATrackNodeDeepSortParams.tsx";
 import { gvaClassifyConfig } from "@/features/pipeline-editor/nodes/GVAClassifyNode.config.ts";
 import { gvaDetectConfig } from "@/features/pipeline-editor/nodes/GVADetectNode.config.ts";
 import { gvaInferenceConfig } from "@/features/pipeline-editor/nodes/GVAInferenceNode.config.ts";
 import { gvaGenAIConfig } from "@/features/pipeline-editor/nodes/GVAGenAINode.config.ts";
 import { gvaMotionDetectConfig } from "@/features/pipeline-editor/nodes/GVAMotionDetectNode.config.ts";
+import { dataSrcConfig } from "@/features/pipeline-editor/nodes/DataSrcNode.config.ts";
+import { fakeSinkConfig } from "@/features/pipeline-editor/nodes/FakeSinkNode.config.ts";
+import { fileSinkConfig } from "@/features/pipeline-editor/nodes/FileSinkNode.config.ts";
+import { fileSrcConfig } from "@/features/pipeline-editor/nodes/FileSrcNode.config.ts";
+import { gvaFpsCounterConfig } from "@/features/pipeline-editor/nodes/GVAFpsCounterNode.config.ts";
+import { gvaMetaPublishConfig } from "@/features/pipeline-editor/nodes/GVAMetaPublishNode.config.ts";
+import { mp4MuxConfig } from "@/features/pipeline-editor/nodes/Mp4MuxNode.config.ts";
+import { multiFileSinkConfig } from "@/features/pipeline-editor/nodes/MultiFileSinkNode.config.ts";
+import { queueConfig } from "@/features/pipeline-editor/nodes/QueueNode.config.ts";
+import { splitMuxSinkConfig } from "@/features/pipeline-editor/nodes/SplitMuxSinkNode.config.ts";
+import { teeConfig } from "@/features/pipeline-editor/nodes/TeeNode.config.ts";
+import { tsamIngestionConfig } from "@/features/pipeline-editor/nodes/TsamIngestionNode.config.ts";
+import { tsamOutputConfig } from "@/features/pipeline-editor/nodes/TsamOutputNode.config.ts";
+import { tsamUdfConfig } from "@/features/pipeline-editor/nodes/TsamUdfNode.config.ts";
 import { sourceNodeConfig } from "./nodes/custom/SourceNode.config.ts";
+import { proximityTriggerConfig } from "./nodes/custom/ProximityTriggerNode.config.ts";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import {
@@ -72,8 +89,6 @@ type NodeDataPanelProps = {
     updatedData: Record<string, unknown>,
   ) => void;
 };
-
-const DEEP_SORT_TRACKING_TYPE = "deep-sort";
 
 const NodeDataPanel = ({
   selectedNode,
@@ -186,6 +201,18 @@ const NodeDataPanel = ({
         nextData.source = currentSource;
         shouldSyncNodeData = true;
       }
+
+      if (normalizedKind === "video") {
+        const defaultSource = currentSource
+          ? ""
+          : getDefaultSourceValue(videoOptions);
+
+        if (defaultSource && defaultSource !== currentSource) {
+          nextData.source = defaultSource;
+          nextData.location = defaultSource;
+          shouldSyncNodeData = true;
+        }
+      }
     }
 
     if (selectedNode.type === "gvatrack") {
@@ -208,7 +235,13 @@ const NodeDataPanel = ({
     if (shouldSyncNodeData) {
       onNodeDataUpdate(selectedNode.id, nextData);
     }
-  }, [onNodeDataUpdate, selectedNode, trackingOptions]);
+  }, [
+    onNodeDataUpdate,
+    pipelineId,
+    selectedNode,
+    trackingOptions,
+    videoOptions,
+  ]);
 
   const getDefaultSourceValue = (options: SelectOption[]): string => {
     const firstAvailableOption = options.find(
@@ -288,6 +321,14 @@ const NodeDataPanel = ({
     onNodeDataUpdate(selectedNode.id, updatedData);
   };
 
+  const applyDataUpdate = (updated: Record<string, unknown>) => {
+    if (!selectedNode) {
+      return;
+    }
+    setEditableData(updated);
+    onNodeDataUpdate(selectedNode.id, updated);
+  };
+
   if (!selectedNode) {
     return (
       <div className="w-full h-full bg-background border-l border-border p-4">
@@ -320,6 +361,37 @@ const NodeDataPanel = ({
         return gvaMotionDetectConfig;
       case "source":
         return sourceNodeConfig;
+      case "gvaproximitytrigger_py":
+        return proximityTriggerConfig;
+      case "multifilesink":
+        return multiFileSinkConfig;
+      case "filesink":
+        return fileSinkConfig;
+      case "fakesink":
+        return fakeSinkConfig;
+      case "filesrc":
+        return fileSrcConfig;
+      case "tee":
+        return teeConfig;
+      case "queue":
+      case "queue2":
+        return queueConfig;
+      case "mp4mux":
+        return mp4MuxConfig;
+      case "gvafpscounter":
+        return gvaFpsCounterConfig;
+      case "gvametapublish":
+        return gvaMetaPublishConfig;
+      case "splitmuxsink":
+        return splitMuxSinkConfig;
+      case "datasrc":
+        return dataSrcConfig;
+      case "tsam-ingestion":
+        return tsamIngestionConfig;
+      case "tsam-udf":
+        return tsamUdfConfig;
+      case "tsam-output":
+        return tsamOutputConfig;
       default:
         return null;
     }
@@ -413,7 +485,9 @@ const NodeDataPanel = ({
                         .filter(
                           (model) =>
                             !propConfig?.params?.filter ||
-                            model.category === propConfig.params.filter,
+                            propConfig.params.filter
+                              .split(",")
+                              .includes(model.category ?? ""),
                         )
                         .flatMap((model) =>
                           (model.variants ?? [])
@@ -592,6 +666,14 @@ const NodeDataPanel = ({
         <div className="text-center py-4">
           <p className="text-xs text-muted-foreground">Nothing to display</p>
         </div>
+      )}
+
+      {selectedNode.type === "gvatrack" && (
+        <GVATrackNodeDeepSortParams
+          nodeId={selectedNode.id}
+          data={editableData}
+          onDataChange={applyDataUpdate}
+        />
       )}
     </div>
   );

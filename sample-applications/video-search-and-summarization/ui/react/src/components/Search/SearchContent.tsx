@@ -1,6 +1,6 @@
 // Copyright (C) 2025 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
-import { FC } from 'react';
+import { FC, useState } from 'react';
 import styled from 'styled-components';
 import { useAppDispatch, useAppSelector } from '../../redux/store';
 import { useTranslation } from 'react-i18next';
@@ -11,6 +11,8 @@ import {
   Button,
   Accordion,
   AccordionItem,
+  Modal,
+  ModalBody,
   InlineLoading,
   SkeletonPlaceholder,
   SkeletonText,
@@ -20,9 +22,9 @@ import { SearchResult, TimeFilterSelection } from '../../redux/search/search';
 import TimeFilterControl from './TimeFilterControl';
 import { StateActionStatus } from '../../redux/summary/summary';
 import { VideoTile } from '../../redux/search/VideoTile';
-import { UIActions, uiSelector } from '../../redux/ui/ui.slice';
 import VideoGroupsView from '../VideoGroups/VideoGroupsView';
 import TelemetryAccordion from './TelemetryAccordion';
+import { imageSearchEnabled } from '../../utils/featureFlags';
 
 // Keying by clip identity rather than array position keeps unchanged tiles mounted when a
 // watched query refreshes, so their <video> elements are not torn down and reloaded.
@@ -38,16 +40,31 @@ const QueryContentWrapper = styled.div`
   flex-flow: column nowrap;
   align-items: flex-start;
   justify-content: flex-start;
-  overflow: hidden;
+  /* The right content panel owns the single scrollbar: tiles + telemetry flow
+     naturally and this wrapper scrolls as one unit. min-height:0 lets it shrink
+     to the viewport-height grid cell so overflow actually scrolls instead of
+     pushing the layout past the viewport. */
+  height: 100%;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
   .videos-container {
-    display: flex;
-    flex-flow: row wrap;
-    overflow-x: hidden;
-    overflow-y: auto;
+    display: grid;
+    /* Fixed-width columns so tiles keep a stable size and left-align instead of
+       stretching to fill the row when only a couple of results remain.
+       width:100% is required: this sits in an align-items:flex-start column
+       flex, so without a definite width the grid's auto-fill collapses to a
+       single column and tiles stack vertically. No internal overflow here: the
+       container grows to its natural height so tiles never shrink and lose their
+       playback controls; scrolling is handled by the panel above. */
+    width: 100%;
+    grid-template-columns: repeat(auto-fill, 20rem);
+    justify-content: start;
+    gap: 1rem;
+    padding: 1rem;
     .video-tile {
       position: relative;
-      width: 20rem;
-      margin: 1rem;
+      width: 100%;
       border: 1px solid rgba(0, 0, 0, 0.2);
       border-radius: 0.5rem;
       overflow: hidden;
@@ -62,10 +79,7 @@ const QueryContentWrapper = styled.div`
 `;
 
 const SettingsContainer = styled.div`
-  position: sticky;
   width: 100%;
-  top: 0;
-  z-index: 2;
   background-color: var(--color-sidebar);
   border-bottom: 1px solid var(--color-border);
   .cds--accordion__item {
@@ -118,6 +132,12 @@ const QueryBar = styled.div`
   background-color: #f4f4f4;
   border-bottom: 1px solid var(--color-border);
   width: 100%;
+  /* Sticky so the query text + Group-by-tag / Re-run controls stay reachable.
+     The Filters accordion above scrolls away first; once this bar reaches the
+     top of the scrolling content panel it pins there. */
+  position: sticky;
+  top: 0;
+  z-index: 2;
 
   .query-label {
     font-weight: 600;
@@ -225,6 +245,12 @@ export const QuerySettings: FC = () => {
   const dispatch = useAppDispatch();
   const { t } = useTranslation();
 
+  // Filters open/closed is tracked per query so expanding it on one search page
+  // does not leave it open on the others. Remembered per queryId while mounted.
+  const [openFiltersByQuery, setOpenFiltersByQuery] = useState<Record<string, boolean>>({});
+  const queryId = selectedQuery?.queryId;
+  const filtersOpen = queryId ? Boolean(openFiltersByQuery[queryId]) : false;
+
   const currentTimeFilter: TimeFilterSelection | null | undefined = selectedQuery?.timeFilter;
 
   const updateTimeFilter = (timeFilter: TimeFilterSelection | null) => {
@@ -236,7 +262,14 @@ export const QuerySettings: FC = () => {
   return (
     <SettingsContainer>
       <Accordion align='start' size='sm'>
-        <AccordionItem title={t('filters', 'Filters')}>
+        <AccordionItem
+          title={t('filters', 'Filters')}
+          open={filtersOpen}
+          onHeadingClick={() => {
+            if (!queryId) return;
+            setOpenFiltersByQuery((prev) => ({ ...prev, [queryId]: !prev[queryId] }));
+          }}
+        >
           <SettingsBar>
             <SettingsSection style={{ justifyContent: 'flex-start' }}>
               {isSelectedInProgress && (
@@ -295,15 +328,54 @@ export const QueryInfo: FC = () => {
   const { selectedQuery, isSelectedRefreshing } = useAppSelector(SearchSelector);
   const dispatch = useAppDispatch();
   const { t } = useTranslation();
+  const [showImageModal, setShowImageModal] = useState(false);
 
   if (!selectedQuery) return null;
 
   return (
     <QueryBar>
       <span className='query-label'>{t('userQueryLabel', 'User Query:')}</span>
-      <Tooltip align='bottom' label={selectedQuery.query}>
-        <strong className='query-text'>{selectedQuery.query}</strong>
-      </Tooltip>
+      {selectedQuery.image ? (
+        <>
+          <img
+            src={selectedQuery.image}
+            alt={t('searchByImage', 'Uploaded image')}
+            onClick={() => setShowImageModal(true)}
+            style={{
+              maxWidth: '48px',
+              maxHeight: '48px',
+              borderRadius: '4px',
+              objectFit: 'cover',
+              cursor: 'pointer',
+            }}
+          />
+          <strong className='query-text'>{t('searchByImage', 'Uploaded image')}</strong>
+          <Modal
+            open={showImageModal}
+            onRequestClose={() => setShowImageModal(false)}
+            modalHeading={t('searchByImage', 'Uploaded image')}
+            passiveModal
+          >
+            <ModalBody>
+              <img
+                src={selectedQuery.image}
+                alt={t('searchByImage', 'Uploaded image')}
+                style={{
+                  maxWidth: '100%',
+                  maxHeight: '70vh',
+                  objectFit: 'contain',
+                  display: 'block',
+                  margin: '0 auto',
+                }}
+              />
+            </ModalBody>
+          </Modal>
+        </>
+      ) : (
+        <Tooltip align='bottom' label={selectedQuery.query}>
+          <strong className='query-text'>{selectedQuery.query}</strong>
+        </Tooltip>
+      )}
       {selectedQuery.tags.length > 0 && (
         <TagsContainer>
           {selectedQuery.tags.map((tag, index) => (
@@ -323,10 +395,8 @@ export const QueryInfo: FC = () => {
         kind='ghost'
         size='sm'
         onClick={() => {
-          // toggle the grouped video view on/off
-          // eslint-disable-next-line no-console
-          console.log('Group by Tag button clicked (toggle)');
-          dispatch(UIActions.toggleVideoGroups());
+          // Toggle the grouped video view for THIS query only.
+          dispatch(SearchActions.toggleGroupByTag({ queryId: selectedQuery.queryId }));
         }}
       >
         {t('GroupByTag')}
@@ -401,17 +471,38 @@ const VideosContainer: FC = () => {
   if (selectedResults.length === 0) {
     return (
       <div style={{ padding: '2rem', textAlign: 'center', color: '#525252', fontStyle: 'italic' }}>
-        <p>{t('noSearchResults', 'No videos found matching your search query.')}</p>
-        <p>{t('tryDifferentSearch', 'Try using different keywords or check if videos have been uploaded.')}</p>
+        <p>{t('noSearchResults', 'No videos found matching your search.')}</p>
+        <p>
+          {imageSearchEnabled
+            ? t(
+                'tryDifferentSearch',
+                'Try a different keyword or image, or check if videos have been uploaded.',
+              )
+            : t(
+                'tryDifferentSearchTextOnly',
+                'Try using different keywords or check if videos have been uploaded.',
+              )}
+        </p>
       </div>
     );
   }
 
+  // Identical video/timestamp pairs (e.g. overlapping live-stream segments) would
+  // otherwise collide on the same React key. Duplicate keys break reconciliation and
+  // leak orphaned tiles on every result-set change (switching query tabs), inflating
+  // the visible count past the configured output limit. Suffix repeats so keys stay
+  // unique while unchanged tiles still keep their <video> elements mounted.
+  const seen = new Map<string, number>();
+
   return (
     <div className='videos-container'>
-      {selectedResults.map((result, index) => (
-        <VideoTile key={searchResultKey(result, index)} resultIndex={index} />
-      ))}
+      {selectedResults.map((result, index) => {
+        const baseKey = searchResultKey(result, index);
+        const occurrence = seen.get(baseKey) ?? 0;
+        seen.set(baseKey, occurrence + 1);
+        const key = occurrence === 0 ? baseKey : `${baseKey}-${occurrence}`;
+        return <VideoTile key={key} resultIndex={index} />;
+      })}
     </div>
   );
 };
@@ -435,7 +526,11 @@ const ErrorMessage: FC = () => {
 export const SearchContent: FC = () => {
   const hasSelectedQuery = useAppSelector((state) => Boolean(SearchSelector(state).selectedQuery));
   const isSelectedHasError = useAppSelector((state) => SearchSelector(state).isSelectedHasError);
-  const { showVideoGroups } = useAppSelector(uiSelector);
+  // Per-query view toggle: read the selected query's own flag so grouping never
+  // leaks across search result pages.
+  const showVideoGroups = useAppSelector(
+    (state) => Boolean(SearchSelector(state).selectedQuery?.showVideoGroups),
+  );
 
   return (
     <>

@@ -1,3 +1,8 @@
+<!--
+SPDX-FileCopyrightText: (C) 2026 Intel Corporation
+SPDX-License-Identifier: Apache-2.0
+-->
+
 # Open Edge Platform (OEP) CLI Installer
 
 The **OEP CLI Installer** (`openedge-cli`) is a modular, self-contained shell
@@ -14,50 +19,25 @@ as well as virtual groups (**profiles**).
 ## Profiles and Modules
 
 Profiles are groupings of installable components targeting specific domain workloads or
-marketing segments. The table lists the profiles and their components.  
+marketing segments. The table lists the profiles:
 
-| Profile | Domain | Modules |
-| ------- | ------ | ------- |
-| `inferencing` | Core AI inferencing runtime | `openvino` |
-| `computer_vision` | Computer-vision pipelines, models, and runtimes | `dlstreamer`, `vippet`, `geti`, `anomalib` |
-| `metro_ai_suite` | City monitoring and traffic management | `smart_intersection`, `smart_parking`, `loitering_detection`, `live_video_captioning`, `video_search_and_summarization` |
-| `manufacturing_ai_suite` | Industrial inspection and defect detection | `pallet_defect_detection`, `pcb_anomaly_detection`, `multimodal_weld_defect_detection` |
-| `retail_ai_suite` | Retail buying-process monitoring | `loss_prevention`, `order_accuracy` |
-| `robotics_ai_suite` | Robotics and Physical AI workflows | `autonomous_mobile_robot`, `stationary_robot_vision`, `humanoid_imitation_learning`, `physical_ai_framework`, `physical_ai_studio` |
-| `federal_and_aerospace_ai_suite` | Multi-modal federal and aerospace use cases | `handheld_multi_modal` |
-| `health_and_life_science_ai_suite` | Patient and vitals monitoring | `nicu_warmer` |
+| Profile | Description |
+| ------- | ------ |
+| `computer_vision` | Computer-vision pipelines, models, and runtimes | 
+| `federal_and_aerospace_ai_suite_handheld` | Federal and Aerospace handheld platform, application, and deterministic threat detection |
+| `federal_and_aerospace_ai_suite_mission_decision_support` | Federal and Aerospace mission decision support blueprint and deterministic threat detection |
+| `federal_and_aerospace_ai_suite_uncrewed_aerial_vehicle` | Federal and Aerospace uncrewed aerial vehicle platform, application, and deterministic threat detection |
+| `health_and_life_science_ai_suite` | Patient and vitals monitoring || `inferencing` | Core AI inferencing runtime |
+| `manufacturing_ai_suite` | Industrial inspection and defect detection |
+| `metro_ai_suite` | City monitoring and traffic management |
+| `retail_ai_suite` | Retail buying-process monitoring |
+| `robotics_ai_suite` | Robotics and Physical AI workflows |
 
-### Module reference
-
-| Module | Description |
-| ------ | ----------- |
-| `openvino` | The OpenVINO™ inference runtime and toolkit. |
-| `dlstreamer` | The Intel® DL Streamer video-analytics pipeline framework. |
-| `vippet` | The Visual Pipeline and Platform Evaluation Tool. |
-| `geti` | The Intel® Geti™ computer-vision model training platform. |
-| `anomalib` | The deep-learning library for visual anomaly detection. |
-| `smart_intersection` | A traffic-intersection monitoring reference sample. |
-| `smart_parking` | A smart-parking occupancy and monitoring sample. |
-| `loitering_detection` | A loitering-detection video analytics sample. |
-| `live_video_captioning` | A real-time video captioning sample. |
-| `video_search_and_summarization` | A video search and summarization (VLM-based) sample. |
-| `pallet_defect_detection` | A pallet defect-detection inspection sample. |
-| `pcb_anomaly_detection` | A PCB anomaly-detection inspection sample. |
-| `multimodal_weld_defect_detection` | A multi-modal weld defect-detection sample. |
-| `loss_prevention` | A Retail loss-prevention sample. |
-| `order_accuracy` | A Retail order-accuracy verification sample. |
-| `handheld_multi_modal` | A handheld multi-modal sample for federal/aerospace use cases. |
-| `nicu_warmer` | A NICU warmer patient-monitoring sample. |
-| `autonomous_mobile_robot` | Robotics AI Suite ROS 2 SDK for sensing, SLAM, and navigation. |
-| `stationary_robot_vision` | Vision-guided pick-and-place reference sample (RVC). |
-| `humanoid_imitation_learning` | Imitation-learning track (ACT and Pi0.5 policies). |
-| `physical_ai_framework` | Physical AI training/deployment SDK (`physicalai` CLI). |
-| `physical_ai_studio` | Physical AI Studio backend + web UI for data collection and training. |
+> See [`modules`](module) or [`packages`](package) for the list of available modules.   
 
 ## Installation
 
-For simplicity, the OEP installer is presented as a single self-contained shell script (located at [`rendered/openedge-cli`](rendered/openedge-cli)) that can be 
-downloaded and then run in a shell environment. 
+For simplicity, the OEP installer is presented as a single self-contained shell script (located at [`rendered/openedge-cli`](rendered/openedge-cli)) that can be downloaded and then run in a shell environment. 
 
 - install components from a profile, or
 ```bash
@@ -72,7 +52,7 @@ curl -fsSL https://raw.githubusercontent.com/open-edge-platform/edge-ai-librarie
 <hr>
 
 > Prefer a guided experience? **[Open the OEP CLI Installer Web UI »](https://docs.openedgeplatform.intel.com/dev/OEP-articles/oep-cli-installer/index.html)**
-> to pick a profile and module and copy the exact install command.
+> to pick one profile and one or more of its modules and copy the exact install command.
 
 <hr>
 
@@ -104,7 +84,7 @@ Remove a profile or a component:
 openedge-cli remove video_conferencing
 ```
 
-> Unlike installation where dependency items are installed automatically, the OEP installer removes a component without touching any dependency items. For example, the OEP installer does not uninstall GPU and NPU drivers upon a sample removal operation. You have to invoke the OEP installer explicitly to remove the GPU and NPU drivers.
+> Unlike installation where dependency items are installed automatically, the OEP installer removes a component without touching any dependency items. For example, the OEP installer does not uninstall GPU and NPU drivers upon a sample removal operation. You have to invoke the OEP installer explicitly to remove the GPU and NPU drivers. Use `remove --remove-all` to force removing all installed components.    
 
 ## Advanced Usage
 
@@ -116,10 +96,11 @@ The OEP installer uses the following commandline options:
 Usage: openedge-cli <subcommand> [options] [modules/profiles] [module options] ...
 ```
 
-Multiple subcommands can be specified at once. They are executed in order:
+Multiple subcommands can be specified at once. They are executed in order and the component list from a previous command is passed to next:
 
 ```bash
-openedge-cli install smart_parking --gpu start smart_parking --gpu
+# install with --gpu, start, stop and then start again with --npu
+openedge-cli install smart_parking --gpu start stop start -npu
 ```
 
 The following global options are supported:
@@ -131,6 +112,7 @@ The following global options are supported:
 | `--validate` | Validate features after installation. |
 | `--reinstall` | Force to reinstall a component, if already installed. |
 | `--gpu`/`--npu`/`--cpu` | Select GPU/NPU/CPU device at the component level. |
+| `--docker`/`--k3s` | Select Docker or K3s deployment.
 
 To specify component specific options, insert a `--<component-name>` tag:
 
@@ -141,25 +123,61 @@ where `--gpu` applies to the smart_parking component.
 
 > Omit `--<component-name>` if there is only a single component or the specified options apply to all components.  
 
+The Federal and Aerospace profiles provide handheld, uncrewed aerial vehicle, and
+mission decision support blueprints, applications, and deterministic threat detection:
+
+```bash
+openedge-cli install federal_and_aerospace_ai_suite_handheld
+openedge-cli install federal_and_aerospace_ai_suite_uncrewed_aerial_vehicle
+openedge-cli install federal_and_aerospace_ai_suite_mission_decision_support
+```
+
+The platform blueprints can also be installed independently:
+
+```bash
+openedge-cli install handheld_blueprint
+openedge-cli install uncrewed_aerial_vehicle_blueprint
+openedge-cli install mission_decision_support_blueprint
+```
+
+For any of these blueprints, pass `--edgepack` to install the Intel Edge Pack
+components, including EP-IPU, EP-Manageability, and EP-TSN:
+
+```bash
+openedge-cli install handheld_blueprint --edgepack
+```
+
+To install the Edge Node Infrastructure Blueprint independently, choose its
+deployment model explicitly:
+
+```bash
+openedge-cli install edge_node_infrastructure_blueprint --k3s
+```
+
+Selecting both `--docker` and `--k3s` is rejected.
+
+> To switch an installed blueprint to the other deployment model, run `openedge-cli install edge_node_infrastructure_blueprint --reinstall --k3s` (or `--reinstall --docker`). Requesting a different model without `--reinstall` fails with this hint. Switching from K3s to Docker, or running `openedge-cli remove edge_node_infrastructure_blueprint` on a K3s installation, also removes the K3s runtime installed by the blueprint (using `k3s-uninstall.sh`) and its unmodified `~/.kube/config` copy; Docker, Helm and other shared components are kept.
+
 ### List Profiles and Components
 
-Use the `list` subcommand to list all components and profiles 
+Use the `list` subcommand to list components and profiles properties:
 
 ```bash
-openedge-cli list
+openedge-cli list                          # list supported subcommands of all components
+openedge-cli list openvino                 # list supported subcommands of specific component(s)
+openedge-cli list --sbom computer_vision   # list installed system-level components
 ```
 
-### List SBOM
+> The `sbom` listing is limited to system-level installation only. 
 
-Use the `sbom` subcommand to discover what is installed by the OEP installer system wide. 
+### Installation Locations 
 
-```bash
-openedge-cli sbom computer_vision
-```
-
-> The listing is limited to system-level installation only.
-
-> User level installation is under `~/.local/open-edge-platform/<component-name>`.  
+The OEP installer installs the specified components under the following locations:
+- Any component workspace files under `~/.local/open-edge-platform/<component-name>`.  
+- Installation logs under `~/.local/open-edge-platform/openedge-cli/*.logs`.  
+- A replica of the OEP installer under `~/.local/bin`.  
+- A bash auto-completion script under `~/.local/share/bash-completion`.  
+- A `SKILL.md` under `~/.agents/skills/openedge-cli/SKILL.md`.    
 
 ### Bootstrapping
 
@@ -182,16 +200,46 @@ For bootstrapping with different modules/profiles, use the commands below:
 
 # install metro_ai_suite by default
 ./openedge-cli bootstrap --setup --install=metro_ai_suite metro_ai_suite -o rendered/openedge-cli-metro
+
+# include only the Federal and Aerospace profiles and their dependencies
+./openedge-cli bootstrap --family=debian \
+  federal_and_aerospace_ai_suite_handheld \
+  federal_and_aerospace_ai_suite_uncrewed_aerial_vehicle \
+  federal_and_aerospace_ai_suite_mission_decision_support \
+  -o rendered/openedge-cli-federal-aerospace
 ```
 
 > Let `rendered/openedge-cli` be a reserved location for the full installer. If you generate a partial installer, save it other than `rendered/openedge-cli`. 
 
 > **Automated rendering.** You normally do not need to run `bootstrap` by hand. A GitHub
 > Actions workflow ([`oep-cli-render-on-merge.yml`](../../.github/workflows/oep-cli-render-on-merge.yml))
-> regenerates `rendered/openedge-cli` and commits it back automatically whenever the
+> regenerates the full installers and the Debian Federal and Aerospace partial installer,
+> then commits them back automatically whenever the
 > installer source (`openedge-cli`, `common/`, `license/`, `module/`, or `profile/`) changes
 > on `main` or a release branch — i.e. after a pull request is merged. The committed
-> `rendered/openedge-cli` therefore stays in sync with source without manual steps.
+> rendered installers therefore stay in sync with source without manual steps.
+
+### Web UI Configuration
+
+The [OEP CLI Installer Web UI](https://docs.openedgeplatform.intel.com/dev/OEP-articles/oep-cli-installer/index.html)
+is driven by `docs/oep-cli-installer-files/config.json`, which is **generated**
+from decentralized, per-profile sources — you edit a small
+`profile/<name>/web_config.json` fragment next to each profile instead of one large
+shared file. Regenerate it with:
+
+```bash
+python3 scripts/build-web-config.py          # regenerate config.json
+python3 scripts/build-web-config.py --check   # verify no drift
+```
+
+See [`profile/README.md` → *Web UI configuration*](profile/README.md#web-ui-configuration)
+for the fragment format and the step-by-step guide to adding a new profile.
+
+> **Automated generation.** The workflow
+> ([`oep-cli-config-on-merge.yml`](../../.github/workflows/oep-cli-config-on-merge.yml))
+> regenerates `config.json` and commits it back after merge when the base config,
+> a profile fragment, or the generator changes, and fails pull requests whose
+> committed `config.json` is stale.
 
 ### Credentials
 
