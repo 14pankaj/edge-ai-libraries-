@@ -7,6 +7,7 @@ import json
 import logging
 
 from .runtime_config import load_runtime_settings
+from .llm_trace import record_model_io
 
 log = logging.getLogger(__name__)
 
@@ -39,24 +40,50 @@ def call_llm(
     model: str | None = None,
     max_tokens: int | None = None,
     temperature: float = 0.2,
+    agent_name: str = "unspecified",
 ) -> str:
     """Send a prompt to the LLM and return the response text.
 
     In fallback mode this is not called — agents use rule-based logic instead.
     """
     settings = load_runtime_settings()
-    client = create_client()
-    response = client.chat.completions.create(
-        model=model or settings.llm_model_name,
-        messages=[
+    request = {
+        "agent": agent_name,
+        "model": model or settings.llm_model_name,
+        "messages": [
             {"role": "system", "content": system_prompt},
-            {"role": "user",   "content": user_message},
+            {"role": "user", "content": user_message},
         ],
-        max_tokens=max_tokens or settings.llm_max_tokens,
-        temperature=temperature,
-        extra_body={"chat_template_kwargs": {"enable_thinking": False}},
-    )
-    content = response.choices[0].message.content
-    if not isinstance(content, str) or not content:
-        raise ValueError("LLM returned an empty response")
-    return content
+        "parameters": {
+            "max_tokens": max_tokens or settings.llm_max_tokens,
+            "temperature": temperature,
+            "extra_body": {"chat_template_kwargs": {"enable_thinking": False}},
+        },
+    }
+    try:
+        client = create_client()
+        response = client.chat.completions.create(
+            model=request["model"],
+            messages=request["messages"],
+            max_tokens=request["parameters"]["max_tokens"],
+            temperature=temperature,
+            extra_body=request["parameters"]["extra_body"],
+        )
+        content = response.choices[0].message.content
+        if not isinstance(content, str) or not content:
+            raise ValueError("LLM returned an empty response")
+        request["response"] = content
+        request["finish_reason"] = response.choices[0].finish_reason
+        usage = getattr(response, "usage", None)
+        if usage is not None:
+            request["usage"] = (
+                usage.model_dump()
+                if hasattr(usage, "model_dump")
+                else str(usage)
+            )
+        record_model_io(request)
+        return content
+    except Exception as exc:
+        request["error"] = f"{type(exc).__name__}: {exc}"
+        record_model_io(request)
+        raise

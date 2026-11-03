@@ -65,7 +65,10 @@ def run(context: AgentContext) -> dict[str, Any]:
     max_tokens = agent_cfg.get("max_tokens")
     max_tokens = int(max_tokens) if max_tokens is not None else None
     raw = llm_client.call_llm(
-        system_prompt=system_prompt, user_message=user_message, max_tokens=max_tokens
+        system_prompt=system_prompt,
+        user_message=user_message,
+        max_tokens=max_tokens,
+        agent_name=agent_name,
     )
     log.info("%s agent LLM response received (%d chars)", agent_name, len(raw))
 

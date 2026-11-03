@@ -75,6 +75,7 @@ class BatchEvent:
     end_id: int | None
     pipeline_status: Mapping[str, Any] | str | None
     error: str | None
+    source_payload: dict[str, Any] = field(default_factory=dict)
     schema_version: str = "1.0"
 
     @classmethod
@@ -110,11 +111,12 @@ class BatchEvent:
             end_id=end_id,
             pipeline_status=_optional_status(payload, "pipeline_status"),
             error=_optional_text(payload, "error"),
+            source_payload=dict(payload),
             schema_version="1.0",
         )
 
-    def metadata(self) -> dict[str, Any]:
-        return {
+    def metadata(self, *, include_source_payload: bool = False) -> dict[str, Any]:
+        metadata = {
             "schema_version": self.schema_version,
             "device": self.device,
             "video_filename": self.video_filename,
@@ -123,6 +125,9 @@ class BatchEvent:
             "pipeline_status": self.pipeline_status,
             "error": self.error,
         }
+        if include_source_payload:
+            metadata["source_payload"] = self.source_payload
+        return metadata
 
 
 @dataclass
@@ -194,6 +199,12 @@ def _on_message(client, userdata, msg):
         delivery.acknowledge()
         return
 
+    if userdata.get("trace_enabled"):
+        log.info(
+            "AQH_INBOUND_MQTT %s",
+            json.dumps(payload, ensure_ascii=False, separators=(",", ":")),
+        )
+
     if _on_batch_callback is None:
         log.error("Batch event handler is not configured")
         return
@@ -217,6 +228,7 @@ def start_subscriber(settings=None) -> mqtt.Client:
             "topic": settings.mqtt_batch_topic,
             "qos": settings.mqtt_qos,
             "max_payload_bytes": settings.mqtt_max_payload_bytes,
+            "trace_enabled": settings.aqh_llm_trace_enabled,
         },
         manual_ack=True,
     )

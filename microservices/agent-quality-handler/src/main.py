@@ -315,12 +315,24 @@ def _run_payload(run_id: str, run: dict) -> dict:
 async def trigger_run(req: RunRequest):
     """Queue a bounded manual reasoning run."""
     run_id = str(uuid.uuid4())
+    settings = load_runtime_settings(validate_assets=False)
+    source_payload = req.model_dump(exclude_none=True)
     _create_run(
         run_id,
         source="http",
         min_id=req.min_id,
         max_id=req.max_id,
+        metadata=(
+            {"source_payload": source_payload}
+            if settings.aqh_llm_trace_enabled
+            else None
+        ),
     )
+    if settings.aqh_llm_trace_enabled:
+        log.info(
+            "AQH_INBOUND_HTTP %s",
+            json.dumps(source_payload, ensure_ascii=False, separators=(",", ":")),
+        )
     _reasoning_queue.put(
         ReasoningWork(
             run_id,
@@ -533,6 +545,7 @@ def _acknowledge_pending(run_id: str) -> None:
 
 
 def _handle_batch_event(event: BatchEvent, delivery: BatchDelivery) -> None:
+    trace_enabled = load_runtime_settings(validate_assets=False).aqh_llm_trace_enabled
     enqueue = False
     terminal = False
     with _runs_lock:
@@ -546,7 +559,7 @@ def _handle_batch_event(event: BatchEvent, delivery: BatchDelivery) -> None:
                 source="mqtt",
                 min_id=event.start_id,
                 max_id=event.end_id,
-                metadata=event.metadata(),
+                metadata=event.metadata(include_source_payload=trace_enabled),
             )
             _finalize_run(
                 event.run_id,
@@ -560,7 +573,7 @@ def _handle_batch_event(event: BatchEvent, delivery: BatchDelivery) -> None:
                 source="mqtt",
                 min_id=event.start_id,
                 max_id=event.end_id,
-                metadata=event.metadata(),
+                metadata=event.metadata(include_source_payload=trace_enabled),
             )
             enqueue = True
 
